@@ -1,0 +1,17 @@
+# Student data - NEVER commit
+data/
+output/
+*.pdf
+session_*.json
+
+# Environment
+.env
+__pycache__/
+*.pyc
+.streamlit/secrets.toml
+
+# OS
+.DS_Store
+
+# Claude Code
+.claude/settings.local.json

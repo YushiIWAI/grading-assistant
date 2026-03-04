@@ -1,0 +1,81 @@
+# 国語テスト 採点基準サンプル
+# このファイルを参考に、実際の試験に合わせて編集してください。
+
+exam_info:
+  title: "第1回 国語テスト"
+  total_points: 50
+  pages_per_student: 1
+
+notes: |
+  - 漢字の読み問題は、ひらがなで正確に書けていれば正解とする
+  - 記述問題は部分点を認める
+  - 誤字脱字は内容に影響しない範囲では減点しない
+
+questions:
+  - id: 1
+    description: "次の漢字の読みをひらがなで書きなさい"
+    type: short_answer
+    max_points: 10
+    scoring_criteria: "各2点。正確な読みのみ正解。"
+    sub_questions:
+      - id: "1-1"
+        text: "矛盾"
+        answer: "むじゅん"
+        points: 2
+      - id: "1-2"
+        text: "慈悲"
+        answer: "じひ"
+        points: 2
+      - id: "1-3"
+        text: "憂鬱"
+        answer: "ゆううつ"
+        points: 2
+      - id: "1-4"
+        text: "曖昧"
+        answer: "あいまい"
+        points: 2
+      - id: "1-5"
+        text: "顕著"
+        answer: "けんちょ"
+        points: 2
+
+  - id: 2
+    description: "次の文中の空欄に当てはまる語句を答えなさい"
+    type: short_answer
+    max_points: 10
+    scoring_criteria: "各5点。同義語も正解とする。"
+    sub_questions:
+      - id: "2-1"
+        text: "彼の態度には（　）がなかった。"
+        answer: "誠意"
+        points: 5
+      - id: "2-2"
+        text: "長年の努力がついに（　）を結んだ。"
+        answer: "実"
+        points: 5
+
+  - id: 3
+    description: "次の文章を読んで、筆者の主張を80字以内で要約しなさい"
+    type: descriptive
+    max_points: 15
+    model_answer: "筆者は、現代社会において対話の重要性が失われつつあることを指摘し、相手の立場に立って考える姿勢を取り戻すべきだと主張している。"
+    scoring_criteria: |
+      以下の観点で採点する:
+      - 筆者の問題意識（対話の喪失）に言及している: 5点
+      - 筆者の主張（相手の立場を理解する姿勢）を捉えている: 5点
+      - 要約として論理的にまとまっている: 5点
+      部分点あり。キーワードが含まれていなくても、趣旨を捉えていれば加点する。
+
+  - id: 4
+    description: "本文の内容を踏まえ、「対話」についてあなたの考えを150字以内で述べなさい"
+    type: descriptive
+    max_points: 15
+    model_answer: ""
+    scoring_criteria: |
+      以下の観点で採点する:
+      - 本文の内容を踏まえている: 3点
+      - 自分の意見が明確に述べられている: 4点
+      - 具体的な例や根拠がある: 4点
+      - 論理的な構成になっている: 4点
+      自由記述のため、内容の妥当性は幅広く認める。
+      本文と無関係な内容のみの場合は大幅減点。
