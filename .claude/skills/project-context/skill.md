@@ -10,12 +10,14 @@ AI採点はあくまで参考値であり、最終判断は教師が行う設計
 
 ## 技術スタック
 - 言語: Python 3
-- UI: Streamlit (>=1.30.0)
+- UI: Streamlit (>=1.33.0)
 - AI: Google Gemini API (google-genai, 推奨) / Anthropic Claude API (anthropic, オプション)
 - PDF処理: PyMuPDF (>=1.24.0)
 - 画像処理: Pillow (>=10.0.0)
 - 設定: PyYAML (>=6.0) — ルーブリック定義
 - 環境変数: python-dotenv
+- テスト: pytest (>=8.0.0)
+- バージョン管理: Git（mainブランチ）
 
 ## ディレクトリ構成
 ```
@@ -31,6 +33,11 @@ grading-assistant/
 │   ├── sample_rubric.yaml
 │   ├── test_rubric.yaml
 │   └── todai_rubric.yaml
+├── tests/                # テストスイート（pytest）
+│   ├── conftest.py       # 共有フィクスチャ
+│   ├── test_models.py
+│   ├── test_scoring_engine.py
+│   └── test_storage.py
 ├── data/                 # 保存済み採点セッション（JSON）
 ├── output/               # エクスポート結果
 ├── test_data/            # サンプルPDF
@@ -55,6 +62,10 @@ grading-assistant/
 - バッチ採点（バッチサイズ設定可能）
 - 横断採点モード（複数生徒を一貫した基準で採点）
 - 信頼度トラッキング・要レビューフラグ
+- RateLimiter: スライディングウィンドウ方式（Gemini 14RPM, Anthropic 50RPM）
+- _validate_schema(): AIレスポンスの構造検証（4つのparse関数で使用）
+- _thinking_budget_for_question(): 問題タイプに応じたGemini thinking token調整
+- analyze_batch_calibration(): バッチ間スコア分布の偏り検出
 
 ### app.py — UI
 - PDFアップロード・生徒ごとのページ分割
@@ -98,6 +109,16 @@ python3 -m streamlit run app.py
 6. ✅ API タイムアウト設定 — Anthropic: `timeout=120.0`, Gemini: `ThreadPoolExecutor` + 120秒タイムアウト
 7. ✅ バッチサイズの推奨値表示 — `recommend_batch_size()` でルーブリック内容から自動算出・デフォルト値に反映
 
-### Phase 3: 将来的改善（未着手）
-- レート制限、st.rerun()削減、テストスイート、バッチ間キャリブレーション、
-  適応的thinking budget、AIレスポンススキーマ検証、Git初期化
+### Phase 3: 将来的改善 ✅ 全完了
+1. ✅ Git初期化 — mainブランチで管理開始、.gitignore整備
+2. ✅ レート制限 — `RateLimiter`クラス（スライディングウィンドウ方式）、Gemini 14RPM / Anthropic 50RPM
+3. ✅ AIレスポンスのスキーマ検証 — `_validate_schema()` + スキーマ定数、4つのparse関数で統合
+4. ✅ 適応的thinking budget — `_thinking_budget_for_question()` で記述問題は2倍のthinking token
+5. ✅ テストスイート — pytest 50テスト（test_models / test_scoring_engine / test_storage）
+6. ✅ バッチ間キャリブレーション — `analyze_batch_calibration()` + レビュータブに警告UI
+7. ✅ st.rerun()削減 — 14箇所→4箇所に削減（on_click/on_changeコールバック化）
+
+### テスト実行
+```bash
+python3 -m pytest tests/ -v
+```
