@@ -49,6 +49,128 @@ st.set_page_config(
     layout="wide",
 )
 
+# --- カスタムCSS ---
+st.markdown("""
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&display=swap');
+
+html, body, [class*="st-"] {
+    font-family: 'Noto Sans JP', 'Hiragino Kaku Gothic ProN',
+                 'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', sans-serif;
+}
+
+:root {
+    --ga-primary: #2563a8;
+    --ga-primary-light: #e8f0fe;
+    --ga-primary-dark: #1a4a7a;
+    --ga-accent: #0d9488;
+    --ga-surface: #f8fafb;
+    --ga-border: #e2e8f0;
+    --ga-text: #1e293b;
+    --ga-text-secondary: #64748b;
+}
+
+.stApp { background-color: #f0f4f8; }
+
+button[data-testid="stBaseButton-primary"] {
+    background-color: var(--ga-primary) !important;
+    border-color: var(--ga-primary) !important;
+    border-radius: 8px !important;
+    font-weight: 500 !important;
+    transition: all 0.2s ease !important;
+}
+button[data-testid="stBaseButton-primary"]:hover {
+    background-color: var(--ga-primary-dark) !important;
+    box-shadow: 0 2px 8px rgba(37, 99, 168, 0.3) !important;
+}
+button[data-testid="stBaseButton-secondary"] {
+    border-radius: 8px !important;
+    border-color: var(--ga-border) !important;
+    transition: all 0.2s ease !important;
+}
+
+section[data-testid="stSidebar"] {
+    background-color: var(--ga-primary-dark) !important;
+}
+section[data-testid="stSidebar"] .stMarkdown,
+section[data-testid="stSidebar"] label,
+section[data-testid="stSidebar"] .stCaption,
+section[data-testid="stSidebar"] span {
+    color: #e2e8f0 !important;
+}
+section[data-testid="stSidebar"] hr {
+    border-color: rgba(255,255,255,0.15) !important;
+}
+
+.stTabs [data-baseweb="tab-list"] {
+    gap: 0px;
+    background-color: white;
+    border-radius: 12px 12px 0 0;
+    padding: 4px 4px 0 4px;
+    border-bottom: 2px solid var(--ga-border);
+}
+.stTabs [data-baseweb="tab"] {
+    padding: 12px 24px !important;
+    font-weight: 500 !important;
+    color: var(--ga-text-secondary) !important;
+    border-radius: 8px 8px 0 0 !important;
+    border: none !important;
+}
+.stTabs [data-baseweb="tab"][aria-selected="true"] {
+    color: var(--ga-primary) !important;
+    background-color: var(--ga-primary-light) !important;
+    border-bottom: 3px solid var(--ga-primary) !important;
+}
+
+div[data-testid="stMetric"] {
+    background-color: white;
+    border: 1px solid var(--ga-border);
+    border-radius: 12px;
+    padding: 16px 20px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+div[data-testid="stMetric"] label {
+    color: var(--ga-text-secondary) !important;
+    font-size: 0.8rem !important;
+}
+div[data-testid="stMetric"] [data-testid="stMetricValue"] {
+    color: var(--ga-primary) !important;
+    font-weight: 700 !important;
+}
+
+details[data-testid="stExpander"] {
+    border: 1px solid var(--ga-border) !important;
+    border-radius: 10px !important;
+    margin-bottom: 8px !important;
+    background-color: white !important;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04) !important;
+}
+
+.stProgress > div > div > div {
+    background-color: var(--ga-accent) !important;
+    border-radius: 4px !important;
+}
+
+div[data-testid="stAlert"] { border-radius: 10px !important; }
+
+.block-container {
+    padding-top: 2rem !important;
+    max-width: 1200px !important;
+}
+
+.stTextInput > div > div,
+.stTextArea > div > div,
+.stNumberInput > div > div {
+    border-radius: 8px !important;
+}
+.stTextInput > div > div:focus-within,
+.stTextArea > div > div:focus-within {
+    border-color: var(--ga-primary) !important;
+    box-shadow: 0 0 0 2px rgba(37, 99, 168, 0.15) !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 # --- セッション状態の初期化 ---
 DEFAULTS = {
     "session": None,
@@ -140,6 +262,61 @@ def get_confidence_color(confidence: str) -> str:
     return {"high": "green", "medium": "orange", "low": "red"}.get(confidence, "gray")
 
 
+def format_confidence(confidence: str) -> str:
+    """確信度ラベルを日本語に変換する"""
+    return {"high": "高", "medium": "中", "low": "低"}.get(confidence, "不明")
+
+
+def status_badge_html(status: str) -> str:
+    """ステータスに応じたHTMLバッジを生成する"""
+    configs = {
+        "pending":    {"label": "未採点",      "bg": "#f1f5f9", "color": "#64748b", "border": "#cbd5e1"},
+        "ai_scored":  {"label": "AI仮採点済み", "bg": "#e8f0fe", "color": "#2563a8", "border": "#93b4e0"},
+        "reviewed":   {"label": "確定",        "bg": "#e6f7f5", "color": "#059669", "border": "#6ee7b7"},
+        "confirmed":  {"label": "確定",        "bg": "#e6f7f5", "color": "#059669", "border": "#6ee7b7"},
+    }
+    c = configs.get(status, configs["pending"])
+    return (
+        f'<span style="display:inline-flex;align-items:center;gap:4px;'
+        f'padding:3px 10px;border-radius:20px;font-size:0.78rem;'
+        f'font-weight:500;white-space:nowrap;'
+        f'background:{c["bg"]};color:{c["color"]};'
+        f'border:1px solid {c["border"]};">'
+        f'{c["label"]}</span>'
+    )
+
+
+def confidence_badge_html(confidence: str) -> str:
+    """確信度に応じたHTMLバッジを生成する"""
+    configs = {
+        "high":   {"label": "自信度: 高", "bg": "#e6f7f5", "color": "#059669", "border": "#6ee7b7"},
+        "medium": {"label": "自信度: 中", "bg": "#fef3c7", "color": "#d97706", "border": "#fcd34d"},
+        "low":    {"label": "自信度: 低", "bg": "#fee2e2", "color": "#dc2626", "border": "#fca5a5"},
+    }
+    c = configs.get(confidence, {"label": f"自信度: {confidence}", "bg": "#f1f5f9", "color": "#64748b", "border": "#cbd5e1"})
+    return (
+        f'<span style="display:inline-flex;align-items:center;'
+        f'padding:2px 8px;border-radius:12px;font-size:0.72rem;'
+        f'font-weight:500;'
+        f'background:{c["bg"]};color:{c["color"]};'
+        f'border:1px solid {c["border"]};">'
+        f'{c["label"]}</span>'
+    )
+
+
+def review_needed_badge_html(count: int) -> str:
+    """要確認バッジを生成する"""
+    if count == 0:
+        return ""
+    return (
+        f'<span style="display:inline-flex;align-items:center;'
+        f'padding:2px 8px;border-radius:12px;font-size:0.72rem;'
+        f'font-weight:500;'
+        f'background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;">'
+        f'要確認 {count}件</span>'
+    )
+
+
 def build_provider():
     """現在の設定からプロバイダーを構築する"""
     provider_name = st.session_state.get("provider_choice", "demo")
@@ -159,19 +336,19 @@ def build_provider():
 
 with st.sidebar:
     st.title("採点支援アプリ")
-    st.caption("プロトタイプ v0.2")
+    st.caption("v0.3")
 
     st.divider()
 
     # --- API設定 ---
-    st.subheader("APIプロバイダー")
+    st.subheader("AI設定")
     provider = st.radio(
         "使用するAI",
         ["gemini", "anthropic", "demo"],
         format_func=lambda x: {
-            "gemini": "Google Gemini",
+            "gemini": "Google Gemini（推奨）",
             "anthropic": "Anthropic Claude",
-            "demo": "デモモード（APIなし）",
+            "demo": "デモモード（AI接続なし）",
         }[x],
         index=0,
         key="provider_choice",
@@ -179,14 +356,14 @@ with st.sidebar:
 
     if provider == "gemini":
         st.text_input(
-            "Google API キー",
+            "Google APIキー（認証情報）",
             value=st.session_state.gemini_key,
             type="password",
             key="gemini_key",
-            help="Google AI Studio (aistudio.google.com) で取得できます",
+            help="Google AI Studio (aistudio.google.com) にログインして取得できます",
         )
         st.selectbox(
-            "モデル",
+            "AIの種類",
             list(GeminiProvider.MODELS.keys()),
             format_func=lambda x: GeminiProvider.MODELS[x],
             key="gemini_model",
@@ -198,14 +375,14 @@ with st.sidebar:
 
     elif provider == "anthropic":
         st.text_input(
-            "Anthropic API キー",
+            "Anthropic APIキー（認証情報）",
             value=st.session_state.anthropic_key,
             type="password",
             key="anthropic_key",
-            help="console.anthropic.com で取得（最低$5の課金が必要）",
+            help="console.anthropic.com で取得できます（利用には最低$5の課金が必要です）",
         )
         st.selectbox(
-            "モデル",
+            "AIの種類",
             list(AnthropicProvider.MODELS.keys()),
             format_func=lambda x: AnthropicProvider.MODELS[x],
             key="anthropic_model",
@@ -216,32 +393,32 @@ with st.sidebar:
             st.warning("APIキーを入力してください")
 
     else:
-        st.info("デモモード: ランダムな仮採点結果で動作確認できます")
+        st.info("デモモード: AIを使わず、サンプルの採点結果で操作を試すことができます")
 
     st.divider()
 
     # --- 過去のセッション ---
-    st.subheader("保存済みセッション")
+    st.subheader("過去の採点データ")
     sessions = list_sessions()
     if sessions:
         options = {s["session_id"]: f'{s["rubric_title"]} ({s["student_count"]}名)' for s in sessions}
         selected = st.selectbox(
-            "読み込むセッション", ["（新規）"] + list(options.keys()),
+            "読み込む採点データ", ["（新規）"] + list(options.keys()),
             format_func=lambda x: options.get(x, x),
         )
         if selected != "（新規）" and st.button("読み込む"):
             loaded = load_session(selected)
             if loaded:
                 st.session_state.session = loaded
-                st.success(f"セッション {selected} を読み込みました")
+                st.success("採点データを読み込みました")
                 st.rerun()
     else:
-        st.caption("保存済みセッションはありません")
+        st.caption("保存済みの採点データはありません")
 
     st.divider()
     st.caption(
-        "⚠️ このツールのAI判定は仮採点です。\n"
-        "最終成績は必ず教員が確認してください。"
+        "ご注意: このツールのAI判定はあくまで仮採点です。\n"
+        "最終成績は必ず教員ご自身で確認してください。"
     )
 
 
@@ -249,11 +426,29 @@ with st.sidebar:
 # メインコンテンツ
 # ============================================================
 
+# --- ウェルカム画面（初回利用時） ---
+if not st.session_state.rubric and not st.session_state.session:
+    st.markdown("""
+## はじめに
+
+このアプリは、**4つのステップ**で採点作業を進めます。
+
+| ステップ | 内容 | 所要時間の目安 |
+|:---:|:---|:---|
+| **1** | 採点基準を入力する | 5〜10分 |
+| **2** | 答案PDFを取り込み、AIが文字起こしと仮採点を行う | 数分（待ち時間） |
+| **3** | AIの採点結果を確認・修正する | 10〜30分 |
+| **4** | 成績をファイルに書き出す | 1分 |
+
+まずは **「1. 採点基準」** タブから始めてください。
+""")
+    st.divider()
+
 tab_rubric, tab_scoring, tab_review, tab_export = st.tabs([
     "1. 採点基準",
-    "2. 答案読み込み・仮採点",
+    "2. 答案の取り込みと仮採点",
     "3. 確認・修正",
-    "4. 結果出力",
+    "4. 成績の書き出し",
 ])
 
 
@@ -263,11 +458,12 @@ tab_rubric, tab_scoring, tab_review, tab_export = st.tabs([
 
 with tab_rubric:
     st.header("採点基準の作成")
+    st.caption("試験の採点基準を設定します。フォームに入力するか、設定ファイル（YAML）をお持ちの場合はそちらからも読み込めます。")
 
     method = st.radio(
         "作成方法",
         ["gui", "yaml"],
-        format_func=lambda x: {"gui": "フォーム入力で作成", "yaml": "YAMLファイルで読み込み"}[x],
+        format_func=lambda x: {"gui": "フォーム入力で作成", "yaml": "設定ファイル（YAML）で読み込み"}[x],
         horizontal=True,
     )
 
@@ -387,9 +583,9 @@ with tab_rubric:
                         f":{color}[問{q['id']}: 小問合計 {sub_total}点 ≠ 配点 {q['max_points']}点]"
                     )
 
-        # 読み込みボタン
+        # 確定ボタン
         st.divider()
-        if questions and st.button("この採点基準を読み込む", type="primary", key="load_gui_rubric"):
+        if questions and st.button("この採点基準を確定する", type="primary", key="load_gui_rubric"):
             # バリデーション: 小問の合計が配点を超えていないか
             validation_errors = []
             for q in questions:
@@ -430,7 +626,7 @@ with tab_rubric:
 
         # YAMLプレビュー
         if questions:
-            with st.expander("生成されるYAMLのプレビュー"):
+            with st.expander("作成した採点基準のプレビュー"):
                 preview_questions = []
                 for q in questions:
                     subs = [SubQuestion(id=s["id"], text=s["text"], answer=s["answer"], points=s["points"])
@@ -451,9 +647,9 @@ with tab_rubric:
 
     else:
         # --- YAMLモード ---
-        st.subheader("YAMLファイルで採点基準を読み込み")
+        st.subheader("設定ファイル（YAML）で採点基準を読み込み")
 
-        rubric_file = st.file_uploader("採点基準YAMLファイル", type=["yaml", "yml"])
+        rubric_file = st.file_uploader("採点基準ファイル（.yaml形式）", type=["yaml", "yml"])
         sample_path = Path(__file__).parent / "rubrics" / "sample_rubric.yaml"
         default_yaml = ""
         if sample_path.exists():
@@ -461,7 +657,7 @@ with tab_rubric:
         if rubric_file:
             default_yaml = rubric_file.read().decode("utf-8")
 
-        rubric_text = st.text_area("採点基準YAML", value=default_yaml, height=400)
+        rubric_text = st.text_area("採点基準（設定ファイル内容）", value=default_yaml, height=400)
 
         if st.button("採点基準を読み込む", type="primary", key="load_yaml_rubric"):
             try:
@@ -469,13 +665,14 @@ with tab_rubric:
                 st.session_state.rubric = rubric
                 st.success(f"「{rubric.title}」を読み込みました（{len(rubric.questions)}問, {rubric.total_points}点満点）")
             except Exception as e:
-                st.error(f"YAML読み込みエラー: {e}")
+                st.error(f"ファイルの読み込みに失敗しました。形式を確認してください。\n（詳細: {e}）")
 
     # 現在の採点基準表示
     if st.session_state.rubric:
         st.divider()
         r = st.session_state.rubric
-        st.success(f"読み込み済み: 「{r.title}」 {len(r.questions)}問 / {r.total_points}点満点")
+        st.success(f"設定済み: 「{r.title}」 {len(r.questions)}問 / {r.total_points}点満点")
+        st.info("**次のステップ →** 「2. 答案の取り込みと仮採点」タブに進んで、答案PDFをアップロードしてください。")
 
 
 # ============================================================
@@ -485,8 +682,38 @@ with tab_rubric:
 with tab_scoring:
     st.header("答案の読み込みと仮採点")
 
+    # --- ステッパーUI ---
+    _session = st.session_state.session
+    _has_pdf = len(st.session_state.student_groups) > 0
+    _ocr_done = _session and _session.ocr_results and len(_session.ocr_results) > 0
+    _ocr_reviewed = _session and _session.ocr_complete() if _session else False
+    _graded = _session and _session.students and any(s.status != "pending" for s in _session.students) if _session else False
+
+    _steps = [
+        ("PDF取り込み", _has_pdf),
+        ("文字読み取り", _ocr_done),
+        ("読み取り確認", _ocr_reviewed),
+        ("まとめ採点", _graded),
+    ]
+    _step_html = ""
+    for _i, (_label, _done) in enumerate(_steps):
+        if _done:
+            _circle = f'<div style="width:28px;height:28px;border-radius:50%;background:#059669;color:white;display:flex;align-items:center;justify-content:center;font-size:0.7rem;font-weight:600;">✓</div>'
+            _lbl_style = "color:#059669;font-weight:500;"
+        elif _i == 0 or _steps[_i-1][1]:
+            _circle = f'<div style="width:28px;height:28px;border-radius:50%;background:#2563a8;color:white;display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:600;box-shadow:0 0 0 3px rgba(37,99,168,0.2);">{_i+1}</div>'
+            _lbl_style = "color:#2563a8;font-weight:600;"
+        else:
+            _circle = f'<div style="width:28px;height:28px;border-radius:50%;background:#e2e8f0;color:#94a3b8;display:flex;align-items:center;justify-content:center;font-size:0.75rem;font-weight:600;">{_i+1}</div>'
+            _lbl_style = "color:#94a3b8;"
+        _connector = f'<div style="flex:1;height:2px;background:{"#059669" if _done else "#e2e8f0"};margin:0 6px;align-self:center;"></div>' if _i < len(_steps) - 1 else ""
+        _step_html += f'<div style="display:flex;flex-direction:column;align-items:center;min-width:70px;">{_circle}<div style="margin-top:4px;font-size:0.72rem;{_lbl_style}">{_label}</div></div>{_connector}'
+
+    st.markdown(f'<div style="display:flex;align-items:flex-start;justify-content:center;padding:12px 16px;margin-bottom:16px;background:white;border-radius:12px;border:1px solid #e2e8f0;">{_step_html}</div>', unsafe_allow_html=True)
+
     # --- PDF読み込み ---
     st.subheader("答案PDFのアップロード")
+    st.caption("スキャンした答案のPDFファイルを取り込みます。")
 
     col_pdf1, col_pdf2 = st.columns([2, 1])
     with col_pdf1:
@@ -501,7 +728,7 @@ with tab_scoring:
         else:
             pages_per = st.number_input("1人あたりのページ数", min_value=1, max_value=10, value=1)
 
-    if pdf_file and st.button("PDFを読み込む", type="primary"):
+    if pdf_file and st.button("答案を取り込む", type="primary"):
         with st.spinner("PDFを画像に変換中..."):
             pdf_bytes = pdf_file.read()
             images = pdf_to_images(pdf_bytes)
@@ -527,9 +754,13 @@ with tab_scoring:
 
     # --- 共通チェック ---
     if not st.session_state.rubric:
-        st.warning("先に「採点基準」タブで採点基準を読み込んでください。")
+        st.info(
+            "このステップでは、採点基準をもとにAIが仮採点を行います。\n\n"
+            "**次のアクション:** 「1. 採点基準」タブで採点基準を設定してください。"
+        )
+        st.stop()
     elif not st.session_state.student_groups:
-        st.warning("先に上のセクションで答案PDFを読み込んでください。")
+        st.info("上の「答案PDFのアップロード」から答案ファイルを取り込んでください。")
     else:
         rubric = st.session_state.rubric
         prov = build_provider()
@@ -541,20 +772,20 @@ with tab_scoring:
         if is_api and not st.session_state.privacy_accepted:
             st.warning(
                 "**個人情報に関する確認**\n\n"
-                "読み取り・採点を実行すると、答案の画像やテキストが"
-                "外部APIサーバーに送信されます。\n\n"
-                "- 送信先: Google / Anthropic のAPIサーバー\n"
-                "- 有料APIのため、送信データはAIモデルの学習には**使用されません**\n"
-                "- データはAPIの処理後、一定期間で自動削除されます\n\n"
+                "読み取り・採点を実行すると、答案の画像や文字データが"
+                "外部のAIサービスに送信されます。\n\n"
+                "- 送信先: Google / Anthropic のAIサービス\n"
+                "- 有料サービスのため、送信されたデータがAIの学習に使われることは**ありません**\n"
+                "- データは処理後、一定期間で自動削除されます\n\n"
                 "学校の情報管理規程に基づき、適切な許可を得た上でご利用ください。"
             )
             def _accept_privacy():
                 st.session_state.privacy_accepted = True
 
-            st.checkbox("上記を確認し、外部API送信に同意します", key="privacy_check",
+            st.checkbox("上記を確認し、外部AIサービスへのデータ送信に同意します", key="privacy_check",
                         on_change=_accept_privacy)
         elif is_api:
-            st.caption("✓ 外部API送信に同意済み")
+            st.caption("✓ 外部AIサービスへのデータ送信に同意済み")
 
         can_run = isinstance(prov, DemoProvider) or st.session_state.privacy_accepted
         session = st.session_state.session
@@ -562,14 +793,14 @@ with tab_scoring:
         # ==========================================================
         # Step 1: OCR（Phase 1）
         # ==========================================================
-        st.subheader("Step 1: 答案テキスト読み取り (OCR)")
+        st.subheader("ステップ1: 答案の文字読み取り（OCR）")
 
         if session and session.ocr_results:
             ocr_ok = sum(1 for o in session.ocr_results if o.status in ("ocr_done", "reviewed"))
             ocr_err = sum(1 for o in session.ocr_results if o.status == "pending" and o.ocr_error)
-            st.success(f"読み取り済み: {ocr_ok}名" + (f"（{ocr_err}名エラー）" if ocr_err else ""))
+            st.success(f"読み取り完了: {ocr_ok}名分" + (f"（{ocr_err}名分は読み取れませんでした）" if ocr_err else ""))
         elif can_run:
-            if st.button("読み取り開始", type="primary", key="start_ocr"):
+            if st.button("文字の読み取りを開始", type="primary", key="start_ocr"):
                 session = ScoringSession(
                     rubric_title=rubric.title,
                     pdf_filename=pdf_file.name if pdf_file else "uploaded.pdf",
@@ -606,8 +837,8 @@ with tab_scoring:
         # Step 2: OCR確認・修正
         # ==========================================================
         if session and session.ocr_results:
-            st.subheader("Step 2: 読み取り結果の確認・修正")
-            st.caption("AIが読み取ったテキストを確認し、必要に応じて修正してください。修正後は「保存」を押してください。")
+            st.subheader("ステップ2: 読み取り結果の確認・修正")
+            st.caption("AIが答案から読み取った文字を確認してください。読み間違いがあれば直接修正できます。修正したら「読み取り結果を保存」を押してください。")
 
             # 一括確認ボタン
             unreviewed = [o for o in session.ocr_results if o.status == "ocr_done" and not o.ocr_error]
@@ -622,14 +853,14 @@ with tab_scoring:
 
             for ocr in session.ocr_results:
                 if ocr.status == "pending" and ocr.ocr_error:
-                    label = f"{ocr.student_id} (OCRエラー)"
+                    label = f"{ocr.student_id}（文字の読み取りに失敗）"
                 else:
                     status_label = "確認済み" if ocr.status == "reviewed" else "未確認"
                     label = f"{ocr.student_id} {ocr.student_name or '(氏名不明)'} ({status_label})"
 
                 with st.expander(label):
                     if ocr.ocr_error:
-                        st.error(f"OCRエラー: {ocr.ocr_error}")
+                        st.error(f"文字の読み取りに失敗しました。答案画像が鮮明か確認してください。\n（詳細: {ocr.ocr_error}）")
                         continue
 
                     new_name = st.text_input(
@@ -668,7 +899,7 @@ with tab_scoring:
                                         ans.manually_corrected = True
                                 with acol2:
                                     conf_color = get_confidence_color(ans.confidence)
-                                    st.markdown(f"確信度: :{conf_color}[{ans.confidence}]")
+                                    st.markdown(f"読み取り精度: :{conf_color}[{format_confidence(ans.confidence)}]")
                                     if ans.manually_corrected:
                                         st.caption("(手動修正済み)")
                     else:
@@ -686,7 +917,7 @@ with tab_scoring:
                                     ans.manually_corrected = True
                             with col2:
                                 conf_color = get_confidence_color(ans.confidence)
-                                st.markdown(f"確信度: :{conf_color}[{ans.confidence}]")
+                                st.markdown(f"読み取り精度: :{conf_color}[{format_confidence(ans.confidence)}]")
                                 if ans.manually_corrected:
                                     st.caption("(手動修正済み)")
 
@@ -703,41 +934,42 @@ with tab_scoring:
                 st.success("保存しました")
 
         # ==========================================================
-        # Step 3: 横断採点（Phase 2）
+        # Step 3: まとめ採点（Phase 2）
         # ==========================================================
         if session and session.ocr_complete():
-            st.subheader("Step 3: 横断採点")
+            st.subheader("ステップ3: 設問ごとのまとめ採点")
             st.info(
-                "各設問ごとに全学生の解答をまとめて採点します。"
-                "テキストのみで採点するため、画像の再送信は不要です。"
+                "同じ設問について全員分の解答をまとめてAIが採点します。"
+                "読み取り済みの文字データを使うため、追加の通信は最小限です。"
             )
 
             rec_size, rec_reason = recommend_batch_size(rubric)
             batch_size = st.number_input(
-                "バッチサイズ（1回のAPI呼び出しに含める学生数）",
+                "1回あたりの処理人数（バッチサイズ）",
                 min_value=3, max_value=30, value=rec_size,
-                help="解答が長い記述問題は小さめ(10-12)、漢字問題は大きめ(20)がおすすめ",
+                help="記述問題が多い場合は少なめ（10〜12人）、漢字の読み書きが中心の場合は多め（20人）が目安です",
                 key="batch_size_input",
             )
-            st.caption(f"💡 推奨: {rec_size}名 — {rec_reason}")
+            st.caption(f"推奨: {rec_size}名 — {rec_reason}")
 
             already_graded = session.students and any(
                 s.status != "pending" for s in session.students
             )
             if already_graded:
-                st.success("横断採点は完了しています。「確認・修正」タブで結果を確認してください。")
+                st.success("まとめ採点は完了しています。")
+                st.info("**次のステップ →** 「3. 確認・修正」タブで、AIの採点結果を確認してください。特に⚠️マークの項目はAIの自信度が低いため、重点的に確認してください。")
 
             rescore_confirmed = True
             if already_graded:
                 rescore_confirmed = st.checkbox(
-                    "既存の採点結果を上書きして再採点する",
+                    "今の採点結果を消して、もう一度採点をやり直す",
                     value=False,
                     key="rescore_confirm_check",
-                    help="チェックすると再採点ボタンが有効になります。既存のスコアは上書きされます。",
+                    help="チェックすると再採点ボタンが有効になります。現在の採点結果は上書きされます。",
                 )
 
             if can_run and st.button(
-                "再採点する" if already_graded else "横断採点を開始する",
+                "もう一度採点する" if already_graded else "まとめ採点を開始する",
                 type="primary", key="start_horizontal",
                 disabled=(already_graded and not rescore_confirmed),
             ):
@@ -748,7 +980,7 @@ with tab_scoring:
                 total_q = len(rubric.questions)
 
                 def on_q_progress(q_idx, total, question, batch_idx, total_batches):
-                    batch_info = f" (バッチ {batch_idx + 1}/{total_batches})" if total_batches > 1 else ""
+                    batch_info = f"（{batch_idx + 1}/{total_batches}回目）" if total_batches > 1 else ""
                     status_text.text(
                         f"問{question.id} を採点中{batch_info}... ({q_idx + 1}/{total}問)"
                     )
@@ -780,7 +1012,7 @@ with tab_scoring:
         st.warning(f"採点完了（{len(st.session_state['grading_errors'])}件のエラーあり）")
         st.session_state["grading_errors"] = []
     elif st.session_state.get("grading_success"):
-        st.success("横断採点が完了しました。「確認・修正」タブで結果を確認してください。")
+        st.success("まとめ採点が完了しました。「3. 確認・修正」タブで結果を確認してください。")
         st.session_state["grading_success"] = False
 
     # セッション概要
@@ -803,14 +1035,14 @@ with tab_scoring:
             ]
             if unconfirmed:
                 st.divider()
-                st.subheader("参考例を使った再採点（横断モード）")
+                st.subheader("お手本を使った再採点")
                 st.info(
-                    f"**{len(refs)}件の参考例**を使って{len(unconfirmed)}名を再採点します。\n"
-                    "OCR結果を再利用するため、画像の再送信は不要です（高速・低コスト）。"
+                    f"**{len(refs)}件のお手本**を使って{len(unconfirmed)}名を再採点します。\n"
+                    "読み取り済みのデータを使うため、短時間で完了します。"
                 )
 
                 can_rerun = isinstance(build_provider(), DemoProvider) or st.session_state.privacy_accepted
-                if can_rerun and st.button("再採点を開始する", type="primary", key="re_grade_horizontal"):
+                if can_rerun and st.button("お手本を使って再採点する", type="primary", key="re_grade_horizontal"):
                     prov = build_provider()
                     rubric = st.session_state.rubric
                     target_ids = [s.student_id for s in unconfirmed]
@@ -834,7 +1066,7 @@ with tab_scoring:
                     for s in session.students:
                         if s.student_id in target_ids:
                             s.ai_overall_comment = (
-                                (s.ai_overall_comment or "") + "\n[参考例をもとに再採点（横断モード）]"
+                                (s.ai_overall_comment or "") + "\n[お手本をもとに再採点しました]"
                             )
 
                     save_session(session)
@@ -858,12 +1090,12 @@ with tab_review:
             "| アイコン | 状態 | 説明 |\n"
             "|:---:|:---|:---|\n"
             "| ⏳ | 未採点 | まだAIが採点していません |\n"
-            "| 🤖 | AI採点済み | AIが仮採点しました。教員の確認が必要です |\n"
+            "| 🤖 | AI仮採点済み | AIが仮採点しました。教員の確認が必要です |\n"
             "| ✅ | 確定 | 教員が確認・確定済みです |"
         )
 
     if not st.session_state.session or not st.session_state.session.students:
-        st.warning("先に「答案読み込み・仮採点」タブで採点を実行してください。")
+        st.info("まだ採点結果がありません。「2. 答案の取り込みと仮採点」タブで仮採点を行ってください。")
     else:
         session = st.session_state.session
 
@@ -877,34 +1109,96 @@ with tab_review:
                 session, st.session_state.rubric, DEFAULT_BATCH_SIZE,
             )
             if cal_warnings:
-                with st.expander("バッチ間キャリブレーション分析", expanded=False):
+                with st.expander("採点のばらつきチェック", expanded=False):
                     for w in cal_warnings:
                         icon = "⚠️" if w["severity"] == "warning" else "ℹ️"
                         st.markdown(
                             f"{icon} **問{w['question_id']}** ({w['description'][:30]}): "
-                            f"バッチ間の最大偏差 **{w['max_deviation']}点** "
+                            f"グループ間の点数のばらつき 最大 **{w['max_deviation']}点** "
                             f"(全体平均: {w['overall_mean']}点)"
                         )
                         if w["severity"] == "warning":
                             st.caption(
-                                "バッチ間で採点基準にズレがある可能性があります。"
-                                "この問の得点を重点的に確認してください。"
+                                "AIの採点基準にばらつきがある可能性があります。"
+                                "この設問の得点を特に注意して確認してください。"
                             )
 
-        # フィルター
-        fcol1, fcol2 = st.columns(2)
-        with fcol1:
-            status_filter = st.multiselect(
-                "状態でフィルタ",
-                ["pending", "ai_scored", "confirmed"],
-                default=["ai_scored", "pending"],
-                format_func=lambda x: {
-                    "pending": "⏳ 未採点", "ai_scored": "🤖 AI採点済み",
-                    "confirmed": "✅ 確定",
-                }.get(x, x),
-            )
-        with fcol2:
-            show_review_only = st.checkbox("要確認のみ表示", value=False)
+        # 表示モード切替
+        review_mode = st.radio(
+            "表示モード",
+            ["学生別", "一覧テーブル"],
+            horizontal=True,
+            key="review_view_mode",
+            help="「一覧テーブル」では全学生の得点を一覧で確認・編集できます",
+        )
+
+        if review_mode == "一覧テーブル":
+            # --- サマリーテーブルモード ---
+            import pandas as pd
+            rubric = st.session_state.rubric
+            pivot_data = []
+            for s in session.students:
+                row = {
+                    "学生番号": s.student_id,
+                    "氏名": s.student_name or "(不明)",
+                }
+                for qs in s.question_scores:
+                    row[f"問{qs.question_id}"] = qs.score
+                row["合計"] = s.total_score
+                row["状態"] = {"pending": "未採点", "ai_scored": "AI仮採点済み", "confirmed": "確定", "reviewed": "確定"}.get(s.status, s.status)
+                pivot_data.append(row)
+
+            if pivot_data:
+                df = pd.DataFrame(pivot_data)
+                col_config = {}
+                if rubric:
+                    for q in rubric.questions:
+                        col_config[f"問{q.id}"] = st.column_config.NumberColumn(
+                            min_value=0, max_value=float(q.max_points), step=0.5,
+                            help=f"配点: {q.max_points}点",
+                        )
+                col_config["合計"] = st.column_config.NumberColumn(format="%.1f")
+
+                edited = st.data_editor(
+                    df,
+                    column_config=col_config,
+                    disabled=["学生番号", "氏名", "合計", "状態"],
+                    use_container_width=True,
+                    key="score_table_editor",
+                )
+
+                if st.button("変更を保存", key="save_table_scores", type="primary"):
+                    for i, row in edited.iterrows():
+                        sid = row["学生番号"]
+                        for s in session.students:
+                            if s.student_id == sid:
+                                for qs in s.question_scores:
+                                    col_name = f"問{qs.question_id}"
+                                    if col_name in row and row[col_name] != qs.score:
+                                        qs.score = float(row[col_name])
+                                s.recalculate_total()
+                    save_session(session)
+                    st.success("保存しました")
+                    st.rerun()
+
+        # --- 学生別モード: フィルターと個別表示 ---
+        if review_mode != "学生別":
+            status_filter = ["ai_scored", "pending"]
+            show_review_only = False
+        else:
+            fcol1, fcol2 = st.columns(2)
+            with fcol1:
+                status_filter = st.multiselect(
+                    "状態でフィルタ",
+                    ["pending", "ai_scored", "confirmed"],
+                    default=["ai_scored", "pending"],
+                    format_func=lambda x: {
+                        "pending": "⏳ 未採点", "ai_scored": "🤖 AI仮採点済み",
+                        "confirmed": "✅ 確定",
+                    }.get(x, x),
+                )
+            with fcol2:
+                show_review_only = st.checkbox("要確認のみ表示", value=False)
 
         # 旧データの "reviewed" は "confirmed" と同等に扱う
         effective_filter = set(status_filter)
@@ -917,10 +1211,49 @@ with tab_review:
             and (not show_review_only or s.review_needed_count() > 0)
         ]
 
-        if not filtered:
+        if review_mode == "学生別" and not filtered:
             st.info("該当する学生がいません。フィルタ条件を変更してください。")
 
-        for student in filtered:
+        # --- 一括操作バー（学生別モードのみ） ---
+        if review_mode == "学生別" and filtered:
+            _unconfirmed = [s for s in filtered if s.status not in ("confirmed", "reviewed")]
+            _safe_to_confirm = [s for s in _unconfirmed if s.review_needed_count() == 0]
+            _needs_review_students = [s for s in filtered if s.review_needed_count() > 0]
+
+            bulk_col1, bulk_col2, bulk_col3 = st.columns([1, 1, 2])
+            with bulk_col1:
+                if _safe_to_confirm:
+                    def _bulk_confirm(students, sess):
+                        for s in students:
+                            s.status = "confirmed"
+                        save_session(sess)
+
+                    st.button(
+                        f"要確認なしの{len(_safe_to_confirm)}名を一括確定",
+                        on_click=_bulk_confirm,
+                        args=(_safe_to_confirm, session),
+                        type="primary",
+                        key="bulk_confirm_btn",
+                    )
+            with bulk_col2:
+                if _needs_review_students:
+                    _total_review = sum(s.review_needed_count() for s in _needs_review_students)
+                    def _bulk_mark_reviewed(students):
+                        for s in students:
+                            for qs in s.question_scores:
+                                if qs.needs_review:
+                                    qs.reviewed = True
+
+                    st.button(
+                        f"要確認{_total_review}件を確認済みに",
+                        on_click=_bulk_mark_reviewed,
+                        args=(_needs_review_students,),
+                        key="bulk_review_btn",
+                    )
+            with bulk_col3:
+                st.caption(f"表示中: {len(filtered)}名 / 全{len(session.students)}名")
+
+        for student in (filtered if review_mode == "学生別" else []):
             emoji = get_status_emoji(student.status)
             review_badge = f" ⚠️{student.review_needed_count()}件" if student.review_needed_count() > 0 else ""
             student_idx = session.students.index(student)
@@ -930,6 +1263,10 @@ with tab_review:
                 f" — {student.total_score}/{student.total_max_points}点{review_badge}",
                 expanded=(student.review_needed_count() > 0),
             ):
+                # ステータスバッジ行
+                badges = f"{status_badge_html(student.status)} {review_needed_badge_html(student.review_needed_count())}"
+                st.markdown(badges, unsafe_allow_html=True)
+
                 # 答案画像
                 if st.session_state.student_groups and student_idx < len(st.session_state.student_groups):
                     with st.expander("答案画像を表示"):
@@ -944,7 +1281,7 @@ with tab_review:
                     conf_color = get_confidence_color(qs.confidence)
                     review_mark = "⚠️ " if qs.needs_review and not qs.reviewed else ""
 
-                    st.markdown(f"**{review_mark}問{qs.question_id}** (確信度: :{conf_color}[{qs.confidence}])")
+                    st.markdown(f"**{review_mark}問{qs.question_id}** (AIの自信度: :{conf_color}[{format_confidence(qs.confidence)}])")
 
                     qc1, qc2 = st.columns([3, 1])
                     with qc1:
@@ -995,7 +1332,7 @@ with tab_review:
                         st.button("確定する", key=f"mk_conf_{student.student_id}",
                                   on_click=_confirm_student, args=(student, session))
                 with bcol2:
-                    ref_label = "参考例を解除" if student.is_reference else "参考例にする"
+                    ref_label = "お手本の指定を解除" if student.is_reference else "お手本に指定する"
                     if student.status in ("reviewed", "confirmed"):
                         st.button(ref_label, key=f"ref_{student.student_id}",
                                   on_click=_toggle_reference, args=(student, session))
@@ -1005,7 +1342,7 @@ with tab_review:
                         st.success("保存しました")
 
                 if student.is_reference:
-                    st.caption("📌 この答案はAI再採点の参考例として使用されます")
+                    st.caption("📌 この答案はAI再採点のお手本として使用されます")
 
 
 # ============================================================
@@ -1013,10 +1350,10 @@ with tab_review:
 # ============================================================
 
 with tab_export:
-    st.header("結果の出力")
+    st.header("成績の書き出し")
 
     if not st.session_state.session or not st.session_state.session.students:
-        st.warning("採点結果がありません。")
+        st.info("採点結果がありません。「2. 答案の取り込みと仮採点」タブで採点を行ってください。")
     else:
         session = st.session_state.session
         summary = session.summary()
@@ -1047,22 +1384,20 @@ with tab_export:
         # エクスポート
         st.divider()
         st.subheader("ファイル出力")
-        ecol1, ecol2 = st.columns(2)
-        with ecol1:
-            st.write("**CSV出力**（Excel等で開けます）")
-            csv_content = export_csv(session)
-            st.download_button(
-                "CSVをダウンロード",
-                data=csv_content.encode("utf-8-sig"),
-                file_name=f"results_{session.session_id}.csv",
-                mime="text/csv",
-            )
-        with ecol2:
-            st.write("**JSON出力**（データ保存用）")
+        st.write("**成績表のダウンロード**（Excelで開けます）")
+        csv_content = export_csv(session)
+        st.download_button(
+            "成績表をダウンロード（CSV形式）",
+            data=csv_content.encode("utf-8-sig"),
+            file_name=f"results_{session.session_id}.csv",
+            mime="text/csv",
+        )
+        with st.expander("その他の形式"):
+            st.write("**JSON形式**（バックアップ・復元用の詳細データ）")
             import json
             json_content = json.dumps(session.to_dict(), ensure_ascii=False, indent=2)
             st.download_button(
-                "JSONをダウンロード",
+                "詳細データをダウンロード（JSON形式）",
                 data=json_content.encode("utf-8"),
                 file_name=f"session_{session.session_id}.json",
                 mime="application/json",
@@ -1079,7 +1414,7 @@ with tab_export:
                     "氏名": s.student_name or "(不明)",
                     "合計点": s.total_score,
                     "満点": s.total_max_points,
-                    "状態": get_status_emoji(s.status) + " " + s.status,
+                    "状態": get_status_emoji(s.status) + " " + {"pending": "未採点", "ai_scored": "AI仮採点済み", "confirmed": "確定", "reviewed": "確定"}.get(s.status, s.status),
                     "要確認": s.review_needed_count(),
                     "メモ": s.reviewer_notes,
                 })
