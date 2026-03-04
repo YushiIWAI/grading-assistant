@@ -31,6 +31,7 @@ from scoring_engine import (
     score_student_by_question,
     ocr_all_students,
     run_horizontal_grading,
+    analyze_batch_calibration,
     DEFAULT_BATCH_SIZE,
     recommend_batch_size,
 )
@@ -289,32 +290,29 @@ with tab_rubric:
         # セッション状態から設問リストを管理
         questions = st.session_state.rb_questions
 
+        # 設問追加コールバック
+        def _add_question(qtype):
+            qs = st.session_state.rb_questions
+            defaults = {
+                "short_answer": {"max_points": 10},
+                "descriptive": {"max_points": 15},
+            }
+            qs.append({
+                "id": len(qs) + 1,
+                "description": "",
+                "type": qtype,
+                "max_points": defaults.get(qtype, {}).get("max_points", 10),
+                "scoring_criteria": "",
+                "model_answer": "",
+                "sub_questions": [],
+            })
+
         # 設問追加ボタン
         add_col1, add_col2 = st.columns(2)
         with add_col1:
-            if st.button("短答問題を追加"):
-                questions.append({
-                    "id": len(questions) + 1,
-                    "description": "",
-                    "type": "short_answer",
-                    "max_points": 10,
-                    "scoring_criteria": "",
-                    "model_answer": "",
-                    "sub_questions": [],
-                })
-                st.rerun()
+            st.button("短答問題を追加", on_click=_add_question, args=("short_answer",))
         with add_col2:
-            if st.button("記述問題を追加"):
-                questions.append({
-                    "id": len(questions) + 1,
-                    "description": "",
-                    "type": "descriptive",
-                    "max_points": 15,
-                    "scoring_criteria": "",
-                    "model_answer": "",
-                    "sub_questions": [],
-                })
-                st.rerun()
+            st.button("記述問題を追加", on_click=_add_question, args=("descriptive",))
 
         # 各設問の編集フォーム
         for qi, q in enumerate(questions):
@@ -330,20 +328,26 @@ with tab_rubric:
                         "配点", value=q["max_points"], min_value=1, key=f"q_pts_{qi}",
                     )
                 with qcol3:
-                    if st.button("この問題を削除", key=f"q_del_{qi}"):
-                        questions.pop(qi)
-                        # IDを振り直す
-                        for i, qq in enumerate(questions):
+                    def _delete_question(idx):
+                        qs = st.session_state.rb_questions
+                        qs.pop(idx)
+                        for i, qq in enumerate(qs):
                             qq["id"] = i + 1
-                        st.rerun()
+
+                    st.button("この問題を削除", key=f"q_del_{qi}",
+                              on_click=_delete_question, args=(qi,))
 
                 if q["type"] == "short_answer":
                     st.caption("小問（漢字の読み、語句の穴埋めなど）")
                     subs = q["sub_questions"]
 
-                    if st.button("小問を追加", key=f"add_sub_{qi}"):
-                        subs.append({"id": f"{q['id']}-{len(subs)+1}", "text": "", "answer": "", "points": 2})
-                        st.rerun()
+                    def _add_sub(question_dict):
+                        s = question_dict["sub_questions"]
+                        s.append({"id": f"{question_dict['id']}-{len(s)+1}",
+                                  "text": "", "answer": "", "points": 2})
+
+                    st.button("小問を追加", key=f"add_sub_{qi}",
+                              on_click=_add_sub, args=(q,))
 
                     for si, sq in enumerate(subs):
                         scol1, scol2, scol3, scol4 = st.columns([1, 3, 3, 1])
@@ -544,9 +548,11 @@ with tab_scoring:
                 "- データはAPIの処理後、一定期間で自動削除されます\n\n"
                 "学校の情報管理規程に基づき、適切な許可を得た上でご利用ください。"
             )
-            if st.checkbox("上記を確認し、外部API送信に同意します", key="privacy_check"):
+            def _accept_privacy():
                 st.session_state.privacy_accepted = True
-                st.rerun()
+
+            st.checkbox("上記を確認し、外部API送信に同意します", key="privacy_check",
+                        on_change=_accept_privacy)
         elif is_api:
             st.caption("✓ 外部API送信に同意済み")
 
@@ -606,11 +612,13 @@ with tab_scoring:
             # 一括確認ボタン
             unreviewed = [o for o in session.ocr_results if o.status == "ocr_done" and not o.ocr_error]
             if unreviewed:
-                if st.button(f"全て確認済みにする（{len(unreviewed)}名）", key="ocr_bulk_review"):
-                    for o in unreviewed:
+                def _bulk_review_ocr(ocr_list, sess):
+                    for o in ocr_list:
                         o.status = "reviewed"
-                    save_session(session)
-                    st.rerun()
+                    save_session(sess)
+
+                st.button(f"全て確認済みにする（{len(unreviewed)}名）", key="ocr_bulk_review",
+                          on_click=_bulk_review_ocr, args=(unreviewed, session))
 
             for ocr in session.ocr_results:
                 if ocr.status == "pending" and ocr.ocr_error:
@@ -683,10 +691,12 @@ with tab_scoring:
                                     st.caption("(手動修正済み)")
 
                     if ocr.status != "reviewed":
-                        if st.button("確認済みにする", key=f"ocr_review_{ocr.student_id}"):
-                            ocr.status = "reviewed"
-                            save_session(session)
-                            st.rerun()
+                        def _review_ocr(ocr_obj, sess):
+                            ocr_obj.status = "reviewed"
+                            save_session(sess)
+
+                        st.button("確認済みにする", key=f"ocr_review_{ocr.student_id}",
+                                  on_click=_review_ocr, args=(ocr, session))
 
             if st.button("読み取り結果を保存", key="save_ocr"):
                 save_session(session)
@@ -857,6 +867,30 @@ with tab_review:
     else:
         session = st.session_state.session
 
+        # バッチ間キャリブレーション分析
+        if (
+            session.grading_mode == "horizontal"
+            and st.session_state.rubric
+            and len(session.students) > DEFAULT_BATCH_SIZE
+        ):
+            cal_warnings = analyze_batch_calibration(
+                session, st.session_state.rubric, DEFAULT_BATCH_SIZE,
+            )
+            if cal_warnings:
+                with st.expander("バッチ間キャリブレーション分析", expanded=False):
+                    for w in cal_warnings:
+                        icon = "⚠️" if w["severity"] == "warning" else "ℹ️"
+                        st.markdown(
+                            f"{icon} **問{w['question_id']}** ({w['description'][:30]}): "
+                            f"バッチ間の最大偏差 **{w['max_deviation']}点** "
+                            f"(全体平均: {w['overall_mean']}点)"
+                        )
+                        if w["severity"] == "warning":
+                            st.caption(
+                                "バッチ間で採点基準にズレがある可能性があります。"
+                                "この問の得点を重点的に確認してください。"
+                            )
+
         # フィルター
         fcol1, fcol2 = st.columns(2)
         with fcol1:
@@ -934,9 +968,11 @@ with tab_review:
                         st.caption(f"/ {qs.max_points}点")
 
                         if qs.needs_review and not qs.reviewed:
-                            if st.button("確認済み", key=f"rev_{student.student_id}_{qs.question_id}"):
-                                qs.reviewed = True
-                                st.rerun()
+                            def _mark_reviewed(q_score):
+                                q_score.reviewed = True
+
+                            st.button("確認済み", key=f"rev_{student.student_id}_{qs.question_id}",
+                                      on_click=_mark_reviewed, args=(qs,))
 
                 st.divider()
                 notes = st.text_area(
@@ -945,19 +981,24 @@ with tab_review:
                 )
                 student.reviewer_notes = notes
 
+                def _confirm_student(s, sess):
+                    s.status = "confirmed"
+                    save_session(sess)
+
+                def _toggle_reference(s, sess):
+                    s.is_reference = not s.is_reference
+                    save_session(sess)
+
                 bcol1, bcol2, bcol3 = st.columns(3)
                 with bcol1:
-                    if student.status not in ("confirmed", "reviewed") and st.button("確定する", key=f"mk_conf_{student.student_id}"):
-                        student.status = "confirmed"
-                        save_session(session)
-                        st.rerun()
+                    if student.status not in ("confirmed", "reviewed"):
+                        st.button("確定する", key=f"mk_conf_{student.student_id}",
+                                  on_click=_confirm_student, args=(student, session))
                 with bcol2:
                     ref_label = "参考例を解除" if student.is_reference else "参考例にする"
                     if student.status in ("reviewed", "confirmed"):
-                        if st.button(ref_label, key=f"ref_{student.student_id}"):
-                            student.is_reference = not student.is_reference
-                            save_session(session)
-                            st.rerun()
+                        st.button(ref_label, key=f"ref_{student.student_id}",
+                                  on_click=_toggle_reference, args=(student, session))
                 with bcol3:
                     if st.button("保存", key=f"save_{student.student_id}"):
                         save_session(session)

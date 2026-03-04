@@ -3,21 +3,142 @@
 from __future__ import annotations
 
 import json
+import logging
 import random
 import re
+import threading
 import time
 from abc import ABC, abstractmethod
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
 from PIL import Image
 
 from typing import Callable
 
+logger = logging.getLogger(__name__)
+
 from models import (
     OcrAnswer, Question, QuestionScore, Rubric,
     ScoringSession, StudentOcr, StudentResult,
 )
 from pdf_processor import image_to_base64
+
+
+# ============================================================
+# レート制限
+# ============================================================
+
+class RateLimiter:
+    """スライディングウィンドウ方式のレート制限。
+
+    max_calls 回/window_seconds 秒 を超えないように wait() でブロックする。
+    """
+
+    def __init__(self, max_calls: int, window_seconds: float):
+        self.max_calls = max_calls
+        self.window = window_seconds
+        self._timestamps: deque[float] = deque()
+        self._lock = threading.Lock()
+
+    def wait(self):
+        """レート制限内で呼び出しが許可されるまでブロックする。"""
+        with self._lock:
+            now = time.time()
+            while self._timestamps and self._timestamps[0] <= now - self.window:
+                self._timestamps.popleft()
+
+            if len(self._timestamps) >= self.max_calls:
+                sleep_time = self._timestamps[0] + self.window - now
+                if sleep_time > 0:
+                    logger.info("レート制限: %.1f秒待機します", sleep_time)
+                    time.sleep(sleep_time)
+                now = time.time()
+                while self._timestamps and self._timestamps[0] <= now - self.window:
+                    self._timestamps.popleft()
+
+            self._timestamps.append(time.time())
+
+
+# ============================================================
+# スキーマ検証
+# ============================================================
+
+# スキーマ定義: {"field": {"required": bool, "type": type, "items_schema": dict}}
+
+OCR_ANSWER_SCHEMA = {
+    "question_id": {"required": True, "type": (str, int)},
+    "transcribed_text": {"required": True, "type": str},
+    "confidence": {"required": False, "type": str},
+}
+
+OCR_SCHEMA = {
+    "student_name": {"required": False, "type": str},
+    "answers": {"required": True, "type": list, "items_schema": OCR_ANSWER_SCHEMA},
+}
+
+SCORE_ITEM_SCHEMA = {
+    "question_id": {"required": True, "type": (str, int)},
+    "score": {"required": True, "type": (int, float)},
+    "max_points": {"required": False, "type": (int, float)},
+    "comment": {"required": False, "type": str},
+    "confidence": {"required": False, "type": str},
+    "needs_review": {"required": False, "type": bool},
+}
+
+SCORING_SCHEMA = {
+    "scores": {"required": True, "type": list, "items_schema": SCORE_ITEM_SCHEMA},
+    "overall_comment": {"required": False, "type": str},
+}
+
+HORIZONTAL_RESULT_SCHEMA = {
+    "student_id": {"required": True, "type": (str, int)},
+    "score": {"required": False, "type": (int, float)},
+    "scores": {"required": False, "type": list},
+    "comment": {"required": False, "type": str},
+    "confidence": {"required": False, "type": str},
+    "needs_review": {"required": False, "type": bool},
+}
+
+HORIZONTAL_SCHEMA = {
+    "results": {"required": True, "type": list, "items_schema": HORIZONTAL_RESULT_SCHEMA},
+}
+
+
+def _validate_schema(data: dict, schema: dict, context: str = "") -> list[str]:
+    """パース済みJSONをスキーマ定義に対して検証する。
+
+    Returns: 警告/エラーメッセージのリスト（空 = 有効）
+    Raises: ValueError（必須のトップレベルフィールドが欠如している場合）
+    """
+    warnings: list[str] = []
+    prefix = f"[{context}] " if context else ""
+
+    for field, spec in schema.items():
+        value = data.get(field)
+        if value is None:
+            if spec["required"]:
+                raise ValueError(f"{prefix}必須フィールド '{field}' がありません")
+            continue
+        expected_type = spec.get("type")
+        if expected_type and not isinstance(value, expected_type):
+            warnings.append(f"{prefix}'{field}' の型が不正: 期待={expected_type}, 実際={type(value)}")
+            continue
+        # リスト要素のバリデーション
+        items_schema = spec.get("items_schema")
+        if items_schema and isinstance(value, list):
+            for i, item in enumerate(value[:3]):  # 最初の3要素のみチェック
+                if isinstance(item, dict):
+                    for sub_field, sub_spec in items_schema.items():
+                        if sub_spec["required"] and sub_field not in item:
+                            warnings.append(
+                                f"{prefix}'{field}[{i}]' に必須フィールド '{sub_field}' がありません"
+                            )
+
+    if warnings:
+        for w in warnings:
+            logger.warning(w)
+    return warnings
 
 
 # ============================================================
@@ -259,6 +380,7 @@ def parse_ocr_result(
     result: dict, rubric: Rubric,
 ) -> tuple[str, list[OcrAnswer]]:
     """OCR API結果をパースする。Returns: (student_name, answers)"""
+    _validate_schema(result, OCR_SCHEMA, context="OCR")
     student_name = result.get("student_name", "")
 
     expected_ids: set[str] = set()
@@ -338,6 +460,19 @@ def recommend_batch_size(rubric: Rubric) -> tuple[int, str]:
             reason = f"短答{short_answer_count}問のみのため大きめ推奨"
 
     return size, reason
+
+
+def _thinking_budget_for_question(question: Question, base: int = 8192) -> int:
+    """question_type に応じた Gemini thinking budget を算出する。
+
+    descriptive → base * 2 (max 16384)
+    short_answer / selection / sub_questions → base
+    """
+    if question.sub_questions:
+        return base
+    if question.question_type == "descriptive":
+        return min(base * 2, 16384)
+    return base
 
 
 def build_horizontal_grading_prompt(
@@ -446,6 +581,7 @@ def parse_horizontal_grading_result(
     expected_student_ids: list[str],
 ) -> dict[str, list[QuestionScore]]:
     """横断採点結果をパースする。Returns: dict[student_id, list[QuestionScore]]"""
+    _validate_schema(result, HORIZONTAL_SCHEMA, context="横断採点")
     scores_by_student: dict[str, list[QuestionScore]] = {}
 
     # 小問IDごとの配点マップ（クランプ用）
@@ -517,6 +653,7 @@ def parse_horizontal_grading_result(
 
 def parse_scoring_result(result: dict) -> tuple[str, list[QuestionScore], str]:
     """API結果をモデルオブジェクトに変換する"""
+    _validate_schema(result, SCORING_SCHEMA, context="採点")
     student_name = result.get("student_name", "")
     overall_comment = result.get("overall_comment", "")
 
@@ -637,6 +774,14 @@ def parse_single_question_result(
     Returns:
         (student_name, question_scores)
     """
+    if question.sub_questions:
+        _validate_schema(result, SCORING_SCHEMA, context=f"問{question.id}(小問)")
+    else:
+        _validate_schema(
+            result,
+            {"score": {"required": True, "type": (int, float)}},
+            context=f"問{question.id}",
+        )
     student_name = result.get("student_name", "")
     scores = []
 
@@ -978,6 +1123,97 @@ def run_horizontal_grading(
 
 
 # ============================================================
+# バッチ間キャリブレーション分析
+# ============================================================
+
+def analyze_batch_calibration(
+    session: ScoringSession,
+    rubric: Rubric,
+    batch_size: int = DEFAULT_BATCH_SIZE,
+) -> list[dict]:
+    """バッチ間のスコア分布を分析し、偏りがある場合に警告を返す。
+
+    Returns:
+        list of dicts with keys:
+            question_id, description, batch_means, overall_mean,
+            max_deviation, severity ("info" | "warning")
+    """
+    import math
+
+    # OCR結果の順序でstudent_idを取得（バッチ分割と同じ順序）
+    student_order = [o.student_id for o in session.ocr_results]
+    if len(student_order) <= batch_size:
+        return []  # バッチ1つのみ → 比較不可
+
+    # バッチに分割
+    batches_ids = [
+        student_order[i:i + batch_size]
+        for i in range(0, len(student_order), batch_size)
+    ]
+    if len(batches_ids) < 2:
+        return []
+
+    # student_id → StudentResult のマップ
+    student_map = {s.student_id: s for s in session.students}
+
+    warnings = []
+
+    for question in rubric.questions:
+        q_ids: list[str] = (
+            [sq.id for sq in question.sub_questions] if question.sub_questions
+            else [str(question.id)]
+        )
+
+        # バッチごとの合計点を収集
+        batch_means = []
+        all_scores_flat = []
+
+        for batch_sids in batches_ids:
+            batch_scores = []
+            for sid in batch_sids:
+                student = student_map.get(sid)
+                if not student:
+                    continue
+                q_total = sum(
+                    qs.score for qs in student.question_scores
+                    if qs.question_id in q_ids
+                )
+                batch_scores.append(q_total)
+                all_scores_flat.append(q_total)
+
+            if batch_scores:
+                batch_means.append(sum(batch_scores) / len(batch_scores))
+
+        if len(batch_means) < 2 or not all_scores_flat:
+            continue
+
+        overall_mean = sum(all_scores_flat) / len(all_scores_flat)
+        max_deviation = max(abs(m - overall_mean) for m in batch_means)
+
+        # 閾値判定
+        threshold_info = question.max_points * 0.15
+        threshold_warn = question.max_points * 0.25
+
+        if max_deviation >= threshold_warn:
+            severity = "warning"
+        elif max_deviation >= threshold_info:
+            severity = "info"
+        else:
+            continue
+
+        warnings.append({
+            "question_id": str(question.id),
+            "description": question.description,
+            "batch_means": [round(m, 1) for m in batch_means],
+            "overall_mean": round(overall_mean, 1),
+            "max_deviation": round(max_deviation, 1),
+            "severity": severity,
+        })
+
+    return warnings
+
+
+# ============================================================
 # プロバイダー抽象クラス
 # ============================================================
 
@@ -1055,6 +1291,7 @@ class GeminiProvider(ScoringProvider):
         from google import genai
         self.client = genai.Client(api_key=api_key)
         self.model_name = model_name
+        self._rate_limiter = RateLimiter(max_calls=14, window_seconds=60.0)
 
     def _call_with_timeout(self, fn):
         """ThreadPoolExecutorでGemini API呼び出しにタイムアウトを設定する"""
@@ -1089,6 +1326,7 @@ class GeminiProvider(ScoringProvider):
         contents.append(prompt)
 
         def _call():
+            self._rate_limiter.wait()
             response = self._call_with_timeout(
                 lambda: self.client.models.generate_content(
                     model=self.model_name,
@@ -1134,7 +1372,10 @@ class GeminiProvider(ScoringProvider):
                 contents.append(f"（上記は答案の{i + 1}ページ目です）")
         contents.append(prompt)
 
+        thinking_budget = _thinking_budget_for_question(question)
+
         def _call():
+            self._rate_limiter.wait()
             response = self._call_with_timeout(
                 lambda: self.client.models.generate_content(
                     model=self.model_name,
@@ -1143,7 +1384,7 @@ class GeminiProvider(ScoringProvider):
                         temperature=0.2,
                         max_output_tokens=24576,
                         thinking_config=types.ThinkingConfig(
-                            thinking_budget=16384,
+                            thinking_budget=thinking_budget,
                         ),
                     ),
                 )
@@ -1165,6 +1406,7 @@ class GeminiProvider(ScoringProvider):
         contents.append(prompt)
 
         def _call():
+            self._rate_limiter.wait()
             response = self._call_with_timeout(
                 lambda: self.client.models.generate_content(
                     model=self.model_name,
@@ -1196,11 +1438,13 @@ class GeminiProvider(ScoringProvider):
         )
 
         n = len(students_answers)
-        thinking_budget = min(4096 + n * 256, 16384)
+        base = 8192 if question.question_type == "descriptive" else 4096
+        thinking_budget = min(base + n * 256, 16384)
         response_budget = max(4096, n * 1024)
         max_output = min(thinking_budget + response_budget, 65536)
 
         def _call():
+            self._rate_limiter.wait()
             response = self._call_with_timeout(
                 lambda: self.client.models.generate_content(
                     model=self.model_name,
@@ -1252,6 +1496,7 @@ class AnthropicProvider(ScoringProvider):
             timeout=120.0,
         )
         self.model_name = model_name
+        self._rate_limiter = RateLimiter(max_calls=50, window_seconds=60.0)
 
     @property
     def name(self) -> str:
@@ -1285,6 +1530,7 @@ class AnthropicProvider(ScoringProvider):
         content.append({"type": "text", "text": scoring_prompt})
 
         def _call():
+            self._rate_limiter.wait()
             response = self.client.messages.create(
                 model=self.model_name,
                 max_tokens=4096,
@@ -1324,6 +1570,7 @@ class AnthropicProvider(ScoringProvider):
         content.append({"type": "text", "text": scoring_prompt})
 
         def _call():
+            self._rate_limiter.wait()
             response = self.client.messages.create(
                 model=self.model_name,
                 max_tokens=2048,
@@ -1350,6 +1597,7 @@ class AnthropicProvider(ScoringProvider):
         content.append({"type": "text", "text": prompt})
 
         def _call():
+            self._rate_limiter.wait()
             response = self.client.messages.create(
                 model=self.model_name,
                 max_tokens=4096,
@@ -1373,6 +1621,7 @@ class AnthropicProvider(ScoringProvider):
         max_tokens = min(2048 + n * 256, 16384)
 
         def _call():
+            self._rate_limiter.wait()
             response = self.client.messages.create(
                 model=self.model_name,
                 max_tokens=max_tokens,
