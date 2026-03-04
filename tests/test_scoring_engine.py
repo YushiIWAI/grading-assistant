@@ -14,10 +14,13 @@ from scoring_engine import (
     OCR_SCHEMA,
     SCORING_SCHEMA,
     HORIZONTAL_SCHEMA,
+    VERIFICATION_SCHEMA,
     parse_ocr_result,
     parse_scoring_result,
     parse_single_question_result,
     parse_horizontal_grading_result,
+    parse_verification_result,
+    build_verification_prompt,
     recommend_batch_size,
     analyze_batch_calibration,
 )
@@ -338,3 +341,85 @@ class TestAnalyzeBatchCalibration:
         # 2/15=13.3% < 15% threshold → no warning for Q2
         # Q1: both get 10/10 → 0 deviation
         assert all(w["severity"] in ("info", "warning") for w in warnings)
+
+
+# ============================================================
+# parse_verification_result
+# ============================================================
+
+class TestParseVerificationResult:
+    def test_normal(self):
+        result = {
+            "results": [
+                {
+                    "student_id": "S001",
+                    "verified_score": 8,
+                    "score_changed": True,
+                    "verification_comment": "要素Bの評価を修正",
+                    "confidence": "medium",
+                    "needs_review": True,
+                },
+                {
+                    "student_id": "S002",
+                    "verified_score": 6,
+                    "score_changed": False,
+                    "verification_comment": "採点妥当",
+                    "confidence": "high",
+                    "needs_review": False,
+                },
+            ]
+        }
+        verified = parse_verification_result(result, ["S001", "S002"], max_points=10.0)
+        assert verified["S001"]["verified_score"] == 8.0
+        assert verified["S001"]["score_changed"] is True
+        assert verified["S001"]["needs_review"] is True
+        assert verified["S002"]["verified_score"] == 6.0
+        assert verified["S002"]["score_changed"] is False
+
+    def test_score_clamping(self):
+        result = {
+            "results": [
+                {
+                    "student_id": "S001",
+                    "verified_score": 15,
+                    "score_changed": True,
+                    "verification_comment": "test",
+                },
+            ]
+        }
+        verified = parse_verification_result(result, ["S001"], max_points=10.0)
+        assert verified["S001"]["verified_score"] == 10.0
+
+    def test_missing_student_filled(self):
+        result = {"results": []}
+        verified = parse_verification_result(result, ["S001"], max_points=10.0)
+        assert verified["S001"]["verified_score"] is None
+        assert verified["S001"]["needs_review"] is True
+        assert verified["S001"]["confidence"] == "low"
+
+
+# ============================================================
+# build_verification_prompt
+# ============================================================
+
+class TestBuildVerificationPrompt:
+    def test_contains_required_sections(self):
+        question = Question(
+            id=2, description="テスト問題", question_type="descriptive",
+            max_points=14, model_answer="模範解答テスト",
+            scoring_criteria="【要素A: 4点】テスト\n【要素B: 5点】テスト",
+        )
+        entries = [
+            ("S001", "山田太郎", "解答テキスト", 10.0, 14.0, "要素Aを満たす"),
+        ]
+        prompt = build_verification_prompt(
+            question=question, rubric_title="テスト試験",
+            student_scores_with_answers=entries,
+        )
+        assert "採点検証" in prompt
+        assert "模範解答" in prompt
+        assert "採点基準" in prompt
+        assert "S001" in prompt
+        assert "10.0/14.0" in prompt
+        assert "要素Aを満たす" in prompt
+        assert "verified_score" in prompt

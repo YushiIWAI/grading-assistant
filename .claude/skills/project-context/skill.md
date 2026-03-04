@@ -118,25 +118,61 @@ python3 -m streamlit run app.py
 6. ✅ バッチ間キャリブレーション — `analyze_batch_calibration()` + レビュータブに警告UI
 7. ✅ st.rerun()削減 — 14箇所→4箇所に削減（on_click/on_changeコールバック化）
 
-### Phase 4: UI改善（プロフェッショナル品質化） — 進行中
+### Phase 4: UI改善（プロフェッショナル品質化） ✅ 全完了
 対象ユーザー: 手作りソフトウェアに不慣れな文系教員。技術用語を避け、直感的に操作できるUIを目指す。
 
-**完了済み:**
 1. ✅ 技術用語に平易な併記を追加（OCR→文字読み取り、バッチサイズ→1回あたりの処理人数 等）
 2. ✅ confidence日本語化（high→高、medium→中、low→低）+ ステータス英語表示修正
 3. ✅ グローバルCSS注入（Noto Sans JP、教育機関向けブルー配色、角丸UI、カードメトリクス）
-4. ✅ st.stop()で前提未達時のUI非表示 + 「次のステップ→」誘導メッセージ
+4. ✅ 前提未達時のUI非表示 + 「次のステップ→」誘導メッセージ（if/elif/else分岐で制御。st.stop()はタブ内で使わないこと）
 5. ✅ ステータスバッジ（絵文字→HTMLバッジ）+ ウェルカム画面（4ステップ案内）
 6. ✅ タブ2内ステッパーUI（HTML/CSSベースの4工程表示）
 7. ✅ タブ3: 一括確定ボタン + 要確認一括クリアボタン
 8. ✅ タブ3: 一覧テーブルモード（data_editorで全学生×全設問のスコア一括編集）
+9. ✅ 進捗リング（SVGベース円形プログレス — サイドバーに配置）
+10. ✅ サイドバーのブランド化（グラデーション背景、ブランドヘッダー、免責装飾）
+11. ✅ 小問の一括テキスト入力モード（タブ区切りテキストの貼り付け対応）
+12. ✅ スコア変更時の即時自動保存（on_changeコールバック + 最終保存時刻表示）
+13. ✅ AIスコア保持と「AIスコアに戻す」（QuestionScore.ai_scoreフィールド追加）
 
-**未着手:**
-- 進捗リング（SVGベース円形プログレス）
-- サイドバーのブランド化（ダーク背景対応テキスト色）
-- 小問の一括テキスト入力モード
-- スコア変更時の即時自動保存
-- AIスコア保持と「AIスコアに戻す」
+### バグ修正 (Phase 4 後)
+- ✅ CSSグローバルfont-family指定がMaterial Symbolsアイコンを上書き → `:not(.material-symbols-rounded)` で除外
+- ✅ `already_graded` が空リスト `[]` → `bool()` でラップ（TypeError修正）
+- ✅ Tab 2内の `st.stop()` がTab 3/4レンダリングを阻害 → `if/elif/else` に変更
+- ✅ `unsafe_allow_html` HTML注入を `st.container()` で隔離
+- ✅ file_uploader に明示的 `key="pdf_uploader"` 追加（タブ切替防止）
+
+### 注意事項（CSS）
+- グローバル `font-family` 指定時は `.material-symbols-rounded` を除外すること（GitHub Issue #10138）
+- `unsafe_allow_html=True` のHTML注入は `st.container()` で隔離し、後続ウィジェットへの干渉を防ぐ
+
+### Phase 5: 採点精度向上（2026-03-04）
+東大模試問題の採点結果（`results_d38a5085.csv`）を評価した結果、以下の課題を特定:
+- 中〜上位帯でやや甘めの採点傾向
+- confidence が全件 "high"、needs_review フラグがゼロ（人間レビューが形骸化）
+- 使用モデル gemini-2.5-flash は2世代前
+
+#### 5-1: Gemini 3.1 Pro Preview 追加 ✅
+- `GeminiProvider.MODELS` に `gemini-3.1-pro-preview` を追加、新デフォルトに設定
+- 2.5 Flash / 2.5 Pro は選択肢として残存
+- `app.py` の `build_provider()` フォールバックも更新
+
+#### 5-2: ダブルチェック方式（検証パス） ✅
+記述式問題の採点後にAIが自動で検証する2パス方式を導入。
+- `VERIFICATION_SYSTEM_PROMPT`: 検証者ロール（採点者とは別視点）
+- `build_verification_prompt()`: 初回スコア+コメント+ルーブリックを提示して検証依頼
+- `parse_verification_result()`: 検証結果パーサー
+- `verify_question_scores()`: バッチ分割で検証実行、スコア差異があれば needs_review=True
+- 3プロバイダー全て（Gemini/Anthropic/Demo）に `verify_question_batch()` メソッド追加
+- `run_horizontal_grading()` に `enable_verification` パラメータ追加
+- UI: サイドバーに「ダブルチェック方式（記述式）」チェックボックス（デフォルトON）
+- 採点結果に「✓検証済」バッジ表示（コメント内の「【検証結果】」で判定）
+
+#### 5-3: 確信度・要確認フラグ改善 ✅
+- `HORIZONTAL_GRADING_SYSTEM_PROMPT` に confidence/needs_review の明確な基準を追加
+- 後処理ルール: 記述式満点→needs_review=True、部分点でhigh→mediumに補正
+
+#### テスト: 58テスト全パス（既存54 + 検証系4テスト）
 
 ### テスト実行
 ```bash

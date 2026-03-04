@@ -70,6 +70,7 @@ class QuestionScore:
     confidence: str = "medium"  # "high", "medium", "low"
     needs_review: bool = False  # 要確認フラグ
     reviewed: bool = False  # 教員確認済みフラグ
+    ai_score: float | None = None  # AI初期スコアのバックアップ（教員修正後に「戻す」用）
 
 
 @dataclass

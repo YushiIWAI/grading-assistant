@@ -40,6 +40,34 @@ class TestStudentResult:
         assert s.review_needed_count() == 0
 
 
+class TestQuestionScore:
+    def test_ai_score_preserved(self):
+        qs = QuestionScore(question_id="1", score=8, max_points=10, ai_score=9.0)
+        assert qs.ai_score == 9.0
+        qs.score = 7.0  # 教員が修正
+        assert qs.ai_score == 9.0  # AI元スコアは保持
+
+    def test_ai_score_default_none(self):
+        qs = QuestionScore(question_id="1", score=8, max_points=10)
+        assert qs.ai_score is None
+
+    def test_ai_score_backwards_compat_from_dict(self):
+        """旧データ（ai_scoreなし）のロード"""
+        data = {"question_id": "1", "score": 8, "max_points": 10,
+                "transcribed_text": "", "comment": "", "confidence": "medium",
+                "needs_review": False, "reviewed": False}
+        qs = QuestionScore(**data)
+        assert qs.ai_score is None
+
+    def test_ai_score_round_trip(self):
+        from dataclasses import asdict
+        qs = QuestionScore(question_id="1", score=7, max_points=10, ai_score=9.5)
+        d = asdict(qs)
+        restored = QuestionScore(**d)
+        assert restored.ai_score == 9.5
+        assert restored.score == 7
+
+
 class TestScoringSession:
     def test_from_dict_round_trip(self, sample_session):
         d = sample_session.to_dict()

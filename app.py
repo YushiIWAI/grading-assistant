@@ -49,14 +49,50 @@ st.set_page_config(
     layout="wide",
 )
 
+
+# --- パスワード認証 ---
+def check_password() -> bool:
+    """共通パスワードによる簡易認証。正しいパスワードなら True を返す。"""
+    if st.session_state.get("authenticated"):
+        return True
+
+    password = st.secrets.get("password", "")
+    if not password:
+        # secrets にパスワード未設定 → 認証なしで通す（ローカル開発用）
+        return True
+
+    st.markdown(
+        "<h2 style='text-align:center; margin-top:2rem;'>📝 国語 採点支援</h2>"
+        "<p style='text-align:center; color:#64748b;'>ログインしてください</p>",
+        unsafe_allow_html=True,
+    )
+    with st.form("login_form"):
+        entered = st.text_input("パスワード", type="password")
+        submitted = st.form_submit_button("ログイン", use_container_width=True)
+        if submitted:
+            if entered == password:
+                st.session_state["authenticated"] = True
+                st.rerun()
+            else:
+                st.error("パスワードが正しくありません")
+    return False
+
+
+if not check_password():
+    st.stop()
+
 # --- カスタムCSS ---
 st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&display=swap');
 
-html, body, [class*="st-"] {
+html, body, [class*="st-"]:not(.material-symbols-rounded) {
     font-family: 'Noto Sans JP', 'Hiragino Kaku Gothic ProN',
                  'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', sans-serif;
+}
+.material-symbols-rounded,
+[class*="material-symbols"] {
+    font-family: "Material Symbols Rounded" !important;
 }
 
 :root {
@@ -90,12 +126,18 @@ button[data-testid="stBaseButton-secondary"] {
 }
 
 section[data-testid="stSidebar"] {
-    background-color: var(--ga-primary-dark) !important;
+    background: linear-gradient(180deg, #1a4a7a 0%, #163d66 100%) !important;
 }
 section[data-testid="stSidebar"] .stMarkdown,
 section[data-testid="stSidebar"] label,
 section[data-testid="stSidebar"] .stCaption,
-section[data-testid="stSidebar"] span {
+section[data-testid="stSidebar"] span,
+section[data-testid="stSidebar"] p,
+section[data-testid="stSidebar"] h1,
+section[data-testid="stSidebar"] h2,
+section[data-testid="stSidebar"] h3,
+section[data-testid="stSidebar"] .stRadio label,
+section[data-testid="stSidebar"] .stSelectbox label {
     color: #e2e8f0 !important;
 }
 section[data-testid="stSidebar"] hr {
@@ -321,7 +363,7 @@ def build_provider():
     """現在の設定からプロバイダーを構築する"""
     provider_name = st.session_state.get("provider_choice", "demo")
     if provider_name == "gemini" and st.session_state.gemini_key:
-        model = st.session_state.get("gemini_model", "gemini-2.5-flash")
+        model = st.session_state.get("gemini_model", "gemini-3.1-pro-preview")
         return GeminiProvider(st.session_state.gemini_key, model)
     elif provider_name == "anthropic" and st.session_state.anthropic_key:
         model = st.session_state.get("anthropic_model", "claude-sonnet-4-20250514")
@@ -330,13 +372,45 @@ def build_provider():
         return DemoProvider()
 
 
+def progress_ring_html(percent: float, label: str = "", size: int = 90) -> str:
+    """SVGベースの円形進捗リング"""
+    r = (size - 8) / 2
+    circ = 2 * 3.14159 * r
+    offset = circ * (1 - percent / 100)
+    color = "#059669" if percent >= 100 else "#2563a8"
+    return (
+        f'<div style="display:flex;flex-direction:column;align-items:center;margin:8px 0;">'
+        f'<svg width="{size}" height="{size}" viewBox="0 0 {size} {size}">'
+        f'<circle cx="{size/2}" cy="{size/2}" r="{r}" fill="none"'
+        f' stroke="rgba(255,255,255,0.15)" stroke-width="6"/>'
+        f'<circle cx="{size/2}" cy="{size/2}" r="{r}" fill="none"'
+        f' stroke="{color}" stroke-width="6"'
+        f' stroke-dasharray="{circ}" stroke-dashoffset="{offset}"'
+        f' stroke-linecap="round"'
+        f' transform="rotate(-90 {size/2} {size/2})"'
+        f' style="transition:stroke-dashoffset 0.5s ease;"/>'
+        f'<text x="{size/2}" y="{size/2}" text-anchor="middle"'
+        f' dominant-baseline="central" font-size="{size*0.22}px"'
+        f' font-weight="600" fill="white">{percent:.0f}%</text>'
+        f'</svg>'
+        f'<span style="font-size:0.72rem;color:#e2e8f0;margin-top:4px;">{label}</span>'
+        f'</div>'
+    )
+
+
 # ============================================================
 # サイドバー
 # ============================================================
 
 with st.sidebar:
-    st.title("採点支援アプリ")
-    st.caption("v0.3")
+    st.markdown(
+        '<div style="text-align:center;padding:12px 0 8px;">'
+        '<div style="font-size:1.5rem;font-weight:700;color:white;letter-spacing:0.5px;">'
+        '採点支援</div>'
+        '<div style="font-size:0.7rem;color:rgba(255,255,255,0.55);margin-top:4px;">'
+        'AI Grading Assistant v0.3</div></div>',
+        unsafe_allow_html=True,
+    )
 
     st.divider()
 
@@ -397,6 +471,30 @@ with st.sidebar:
 
     st.divider()
 
+    # --- 採点オプション ---
+    st.subheader("採点オプション")
+    st.checkbox(
+        "ダブルチェック方式（記述式）",
+        value=True,
+        key="enable_verification",
+        help="記述式問題の採点後にAIが自動で検証を行い、得点とコメントの整合性を確認します。"
+             "得点が変更された場合は「要確認」フラグが付きます。",
+    )
+
+    st.divider()
+
+    # --- 進捗リング ---
+    if st.session_state.session and st.session_state.session.students:
+        summary = st.session_state.session.summary()
+        total = summary["total_students"]
+        confirmed = summary["reviewed"]
+        pct = (confirmed / total * 100) if total > 0 else 0
+        st.markdown(
+            progress_ring_html(pct, f"{confirmed}/{total}名 確定済み"),
+            unsafe_allow_html=True,
+        )
+        st.divider()
+
     # --- 過去のセッション ---
     st.subheader("過去の採点データ")
     sessions = list_sessions()
@@ -416,9 +514,12 @@ with st.sidebar:
         st.caption("保存済みの採点データはありません")
 
     st.divider()
-    st.caption(
-        "ご注意: このツールのAI判定はあくまで仮採点です。\n"
-        "最終成績は必ず教員ご自身で確認してください。"
+    st.markdown(
+        '<div style="padding:10px;border-radius:8px;background:rgba(255,255,255,0.08);'
+        'font-size:0.7rem;color:rgba(255,255,255,0.7);line-height:1.5;">'
+        'このツールのAI判定はあくまで仮採点です。'
+        '最終成績は必ず教員ご自身で確認してください。</div>',
+        unsafe_allow_html=True,
     )
 
 
@@ -537,24 +638,75 @@ with tab_rubric:
                     st.caption("小問（漢字の読み、語句の穴埋めなど）")
                     subs = q["sub_questions"]
 
-                    def _add_sub(question_dict):
-                        s = question_dict["sub_questions"]
-                        s.append({"id": f"{question_dict['id']}-{len(s)+1}",
-                                  "text": "", "answer": "", "points": 2})
+                    sub_input_mode = st.radio(
+                        "入力方式", ["individual", "bulk"],
+                        format_func=lambda x: {"individual": "1つずつ入力", "bulk": "まとめて入力（貼り付け）"}[x],
+                        horizontal=True, key=f"sub_mode_{qi}",
+                        label_visibility="collapsed",
+                    )
 
-                    st.button("小問を追加", key=f"add_sub_{qi}",
-                              on_click=_add_sub, args=(q,))
+                    if sub_input_mode == "bulk":
+                        st.markdown(
+                            "1行に1小問。タブ区切りで **問題文**・**正答**・**配点** を指定してください。\n\n"
+                            "例: `矛盾\tむじゅん\t2`"
+                        )
+                        default_lines = "\n".join(
+                            f"{sq['text']}\t{sq['answer']}\t{sq['points']}" for sq in subs
+                        ) if subs else ""
+                        bulk_text = st.text_area(
+                            "小問データ（タブ区切り: 問題文 / 正答 / 配点）",
+                            value=default_lines, height=150, key=f"bulk_sub_{qi}",
+                            placeholder="矛盾\tむじゅん\t2\n慈悲\tじひ\t2",
+                        )
 
-                    for si, sq in enumerate(subs):
-                        scol1, scol2, scol3, scol4 = st.columns([1, 3, 3, 1])
-                        with scol1:
-                            sq["id"] = st.text_input("ID", value=sq["id"], key=f"sq_id_{qi}_{si}", disabled=True)
-                        with scol2:
-                            sq["text"] = st.text_input("問題文/対象語句", value=sq["text"], key=f"sq_text_{qi}_{si}")
-                        with scol3:
-                            sq["answer"] = st.text_input("正答", value=sq["answer"], key=f"sq_ans_{qi}_{si}")
-                        with scol4:
-                            sq["points"] = st.number_input("点", value=sq["points"], min_value=1, key=f"sq_pts_{qi}_{si}")
+                        def _parse_bulk_subs(text, question_dict):
+                            new_subs = []
+                            for line in text.strip().split("\n"):
+                                line = line.strip()
+                                if not line:
+                                    continue
+                                parts = line.split("\t")
+                                if len(parts) < 2:
+                                    parts = line.split()
+                                if len(parts) >= 3:
+                                    sub_text, answer = parts[0].strip(), parts[1].strip()
+                                    try:
+                                        pts = int(parts[2])
+                                    except ValueError:
+                                        pts = 2
+                                elif len(parts) == 2:
+                                    sub_text, answer, pts = parts[0].strip(), parts[1].strip(), 2
+                                else:
+                                    sub_text, answer, pts = parts[0].strip(), "", 2
+                                sub_id = f"{question_dict['id']}-{len(new_subs) + 1}"
+                                new_subs.append({"id": sub_id, "text": sub_text, "answer": answer, "points": pts})
+                            if new_subs:
+                                question_dict["sub_questions"] = new_subs
+
+                        st.button("取り込む", key=f"parse_bulk_{qi}",
+                                  on_click=_parse_bulk_subs, args=(bulk_text, q))
+                        if subs:
+                            st.caption(f"現在 {len(subs)} 小問が登録されています")
+
+                    else:
+                        def _add_sub(question_dict):
+                            s = question_dict["sub_questions"]
+                            s.append({"id": f"{question_dict['id']}-{len(s)+1}",
+                                      "text": "", "answer": "", "points": 2})
+
+                        st.button("小問を追加", key=f"add_sub_{qi}",
+                                  on_click=_add_sub, args=(q,))
+
+                        for si, sq in enumerate(subs):
+                            scol1, scol2, scol3, scol4 = st.columns([1, 3, 3, 1])
+                            with scol1:
+                                sq["id"] = st.text_input("ID", value=sq["id"], key=f"sq_id_{qi}_{si}", disabled=True)
+                            with scol2:
+                                sq["text"] = st.text_input("問題文/対象語句", value=sq["text"], key=f"sq_text_{qi}_{si}")
+                            with scol3:
+                                sq["answer"] = st.text_input("正答", value=sq["answer"], key=f"sq_ans_{qi}_{si}")
+                            with scol4:
+                                sq["points"] = st.number_input("点", value=sq["points"], min_value=1, key=f"sq_pts_{qi}_{si}")
 
                     q["scoring_criteria"] = st.text_area(
                         "採点基準（任意）", value=q["scoring_criteria"],
@@ -709,7 +861,8 @@ with tab_scoring:
         _connector = f'<div style="flex:1;height:2px;background:{"#059669" if _done else "#e2e8f0"};margin:0 6px;align-self:center;"></div>' if _i < len(_steps) - 1 else ""
         _step_html += f'<div style="display:flex;flex-direction:column;align-items:center;min-width:70px;">{_circle}<div style="margin-top:4px;font-size:0.72rem;{_lbl_style}">{_label}</div></div>{_connector}'
 
-    st.markdown(f'<div style="display:flex;align-items:flex-start;justify-content:center;padding:12px 16px;margin-bottom:16px;background:white;border-radius:12px;border:1px solid #e2e8f0;">{_step_html}</div>', unsafe_allow_html=True)
+    with st.container():
+        st.markdown(f'<div style="display:flex;align-items:flex-start;justify-content:center;padding:12px 16px;margin-bottom:16px;background:white;border-radius:12px;border:1px solid #e2e8f0;">{_step_html}</div>', unsafe_allow_html=True)
 
     # --- PDF読み込み ---
     st.subheader("答案PDFのアップロード")
@@ -717,7 +870,7 @@ with tab_scoring:
 
     col_pdf1, col_pdf2 = st.columns([2, 1])
     with col_pdf1:
-        pdf_file = st.file_uploader("答案PDFファイル", type=["pdf"])
+        pdf_file = st.file_uploader("答案PDFファイル", type=["pdf"], key="pdf_uploader")
     with col_pdf2:
         if st.session_state.rubric:
             pages_per = st.number_input(
@@ -745,7 +898,7 @@ with tab_scoring:
     # プレビュー
     if st.session_state.student_groups:
         with st.expander(f"答案プレビュー（{len(st.session_state.student_groups)}名分）"):
-            preview_idx = st.slider("学生番号", 1, len(st.session_state.student_groups), 1)
+            preview_idx = st.slider("学生番号", 1, len(st.session_state.student_groups), 1, key="preview_slider")
             group = st.session_state.student_groups[preview_idx - 1]
             for page_num, img in group:
                 st.image(image_to_bytes(img), caption=f"ページ {page_num}", use_container_width=True)
@@ -758,7 +911,6 @@ with tab_scoring:
             "このステップでは、採点基準をもとにAIが仮採点を行います。\n\n"
             "**次のアクション:** 「1. 採点基準」タブで採点基準を設定してください。"
         )
-        st.stop()
     elif not st.session_state.student_groups:
         st.info("上の「答案PDFのアップロード」から答案ファイルを取り込んでください。")
     else:
@@ -856,7 +1008,7 @@ with tab_scoring:
                     label = f"{ocr.student_id}（文字の読み取りに失敗）"
                 else:
                     status_label = "確認済み" if ocr.status == "reviewed" else "未確認"
-                    label = f"{ocr.student_id} {ocr.student_name or '(氏名不明)'} ({status_label})"
+                    label = f"{ocr.student_id} {ocr.student_name or '(氏名不明)'}（{status_label}）"
 
                 with st.expander(label):
                     if ocr.ocr_error:
@@ -952,9 +1104,9 @@ with tab_scoring:
             )
             st.caption(f"推奨: {rec_size}名 — {rec_reason}")
 
-            already_graded = session.students and any(
+            already_graded = bool(session.students and any(
                 s.status != "pending" for s in session.students
-            )
+            ))
             if already_graded:
                 st.success("まとめ採点は完了しています。")
                 st.info("**次のステップ →** 「3. 確認・修正」タブで、AIの採点結果を確認してください。特に⚠️マークの項目はAIの自信度が低いため、重点的に確認してください。")
@@ -993,6 +1145,7 @@ with tab_scoring:
                     reference_students=refs,
                     batch_size=int(batch_size),
                     on_question_progress=on_q_progress,
+                    enable_verification=st.session_state.get("enable_verification", False),
                 )
 
                 save_session(session)
@@ -1061,6 +1214,7 @@ with tab_scoring:
                         batch_size=DEFAULT_BATCH_SIZE,
                         on_question_progress=on_q_progress_re,
                         student_ids_to_grade=target_ids,
+                        enable_verification=st.session_state.get("enable_verification", False),
                     )
 
                     for s in session.students:
@@ -1098,6 +1252,9 @@ with tab_review:
         st.info("まだ採点結果がありません。「2. 答案の取り込みと仮採点」タブで仮採点を行ってください。")
     else:
         session = st.session_state.session
+
+        if session.updated_at:
+            st.caption(f"最終保存: {session.updated_at[:19].replace('T', ' ')}")
 
         # バッチ間キャリブレーション分析
         if (
@@ -1264,8 +1421,9 @@ with tab_review:
                 expanded=(student.review_needed_count() > 0),
             ):
                 # ステータスバッジ行
-                badges = f"{status_badge_html(student.status)} {review_needed_badge_html(student.review_needed_count())}"
-                st.markdown(badges, unsafe_allow_html=True)
+                with st.container():
+                    badges = f"{status_badge_html(student.status)} {review_needed_badge_html(student.review_needed_count())}"
+                    st.markdown(badges, unsafe_allow_html=True)
 
                 # 答案画像
                 if st.session_state.student_groups and student_idx < len(st.session_state.student_groups):
@@ -1281,7 +1439,8 @@ with tab_review:
                     conf_color = get_confidence_color(qs.confidence)
                     review_mark = "⚠️ " if qs.needs_review and not qs.reviewed else ""
 
-                    st.markdown(f"**{review_mark}問{qs.question_id}** (AIの自信度: :{conf_color}[{format_confidence(qs.confidence)}])")
+                    verified_mark = " ✓検証済" if "【検証結果】" in qs.comment else ""
+                    st.markdown(f"**{review_mark}問{qs.question_id}** (AIの自信度: :{conf_color}[{format_confidence(qs.confidence)}]){verified_mark}")
 
                     qc1, qc2 = st.columns([3, 1])
                     with qc1:
@@ -1302,14 +1461,29 @@ with tab_review:
                         if new_score != qs.score:
                             qs.score = new_score
                             student.recalculate_total()
+                            save_session(session)
                         st.caption(f"/ {qs.max_points}点")
 
+                        if qs.ai_score is not None and abs(qs.score - qs.ai_score) > 0.01:
+                            def _restore_ai_score(q_score, s, sess):
+                                q_score.score = q_score.ai_score
+                                s.recalculate_total()
+                                save_session(sess)
+
+                            st.button(
+                                f"AIスコアに戻す ({qs.ai_score:.1f}点)",
+                                key=f"restore_ai_{student.student_id}_{qs.question_id}",
+                                on_click=_restore_ai_score,
+                                args=(qs, student, session),
+                            )
+
                         if qs.needs_review and not qs.reviewed:
-                            def _mark_reviewed(q_score):
+                            def _mark_reviewed(q_score, sess):
                                 q_score.reviewed = True
+                                save_session(sess)
 
                             st.button("確認済み", key=f"rev_{student.student_id}_{qs.question_id}",
-                                      on_click=_mark_reviewed, args=(qs,))
+                                      on_click=_mark_reviewed, args=(qs, session))
 
                 st.divider()
                 notes = st.text_area(

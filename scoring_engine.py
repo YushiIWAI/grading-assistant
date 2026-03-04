@@ -104,6 +104,19 @@ HORIZONTAL_SCHEMA = {
     "results": {"required": True, "type": list, "items_schema": HORIZONTAL_RESULT_SCHEMA},
 }
 
+VERIFICATION_ITEM_SCHEMA = {
+    "student_id": {"required": True, "type": (str, int)},
+    "verified_score": {"required": True, "type": (int, float)},
+    "score_changed": {"required": True, "type": bool},
+    "verification_comment": {"required": True, "type": str},
+    "confidence": {"required": False, "type": str},
+    "needs_review": {"required": False, "type": bool},
+}
+
+VERIFICATION_SCHEMA = {
+    "results": {"required": True, "type": list, "items_schema": VERIFICATION_ITEM_SCHEMA},
+}
+
 
 def _validate_schema(data: dict, schema: dict, context: str = "") -> list[str]:
     """パース済みJSONをスキーマ定義に対して検証する。
@@ -173,7 +186,31 @@ HORIZONTAL_GRADING_SYSTEM_PROMPT = """\
 - 全学生に対して同一の基準を厳密に適用してください
 - 学生間の相対的な出来を意識し、一貫性のある採点を行ってください
 - 本文のキーワードや概念を正確に用いた説明と、日常語による表面的な言い換えを明確に区別してください
-- 部分点の判断が微妙な場合は needs_review を true にしてください
+
+confidence の基準:
+- high: 漢字・選択問題の正誤判定、または記述式で採点基準の全要素が明確に該当/非該当の場合
+- medium: 記述式の部分点判定（デフォルト）
+- low: 判読困難、採点基準の解釈に幅がある場合
+
+needs_review を true にする場合:
+- 部分点の判断が微妙な場合
+- 配点の40〜60%付近のボーダーケース
+- 満点を付与する記述式解答（教員確認推奨）
+- コメントの内容と得点の整合性に迷いがある場合
+"""
+
+VERIFICATION_SYSTEM_PROMPT = """\
+あなたは国語科の採点検証者です。別の採点者による採点結果を独立に検証します。
+
+以下の観点で検証してください:
+1. コメントの内容と得点が整合しているか（コメントで要素の欠落を指摘しながら高得点を付けていないか）
+2. 採点基準の各要素の評価が正確か（要素ごとの配点を確認）
+3. 部分点の配分が基準の目安に沿っているか
+4. 満点・0点の判定に見落としがないか
+5. 学生間で類似の解答に対して一貫した採点がされているか
+
+得点を変更する場合は、変更理由を明記してください。
+得点の妥当性に迷う場合は needs_review を true にしてください。
 """
 
 
@@ -575,6 +612,112 @@ def build_horizontal_grading_prompt(
     return "\n".join(lines)
 
 
+def build_verification_prompt(
+    question: Question,
+    rubric_title: str,
+    student_scores_with_answers: list[tuple[str, str, str, float, float, str]],
+    notes: str = "",
+) -> str:
+    """検証パスプロンプト: 初回採点結果を検証する。
+
+    Args:
+        student_scores_with_answers: 各学生の
+            (student_id, student_name, transcribed_text,
+             initial_score, max_points, initial_comment) リスト
+    """
+    lines = [
+        f"# 採点検証: {rubric_title}",
+        "",
+        f"## 問{question.id}: {question.description.strip()}",
+        f"- 配点: {question.max_points}点",
+    ]
+
+    if question.model_answer:
+        lines.append(f"\n### 模範解答\n{question.model_answer.strip()}")
+
+    if question.scoring_criteria:
+        lines.append(f"\n### 採点基準\n{question.scoring_criteria.strip()}")
+
+    if notes:
+        lines.append(f"\n### 採点上の注意\n{notes.strip()}")
+
+    lines.extend([
+        "",
+        f"## 検証対象（{len(student_scores_with_answers)}名分）",
+        "以下の初回採点結果を検証し、必要に応じて得点を修正してください。",
+    ])
+
+    for sid, sname, text, score, mp, comment in student_scores_with_answers:
+        display_name = sname or sid
+        lines.append(f"\n### {sid}（{display_name}）")
+        if text.strip():
+            lines.append(f"解答: 「{text}」")
+        else:
+            lines.append("解答: （空欄）")
+        lines.append(f"初回採点: {score}/{mp}点")
+        if comment:
+            lines.append(f"初回コメント: {comment}")
+
+    lines.extend([
+        "",
+        "## 回答形式",
+        "以下のJSON形式で全学生分の検証結果を返してください。JSONのみを出力してください。",
+        "",
+        "```json",
+        "{",
+        '  "results": [',
+        "    {",
+        '      "student_id": "学生ID",',
+        '      "verified_score": 検証後の得点,',
+        '      "score_changed": true/false,',
+        '      "verification_comment": "検証コメント（変更理由または妥当と判断した根拠）",',
+        '      "confidence": "high/medium/low",',
+        '      "needs_review": true/false',
+        "    }",
+        "  ]",
+        "}",
+        "```",
+    ])
+
+    return "\n".join(lines)
+
+
+def parse_verification_result(
+    result: dict,
+    expected_student_ids: list[str],
+    max_points: float,
+) -> dict[str, dict]:
+    """検証結果をパースする。Returns: dict[student_id, verified_info]"""
+    _validate_schema(result, VERIFICATION_SCHEMA, context="検証")
+    verified: dict[str, dict] = {}
+
+    for entry in result.get("results", []):
+        sid = str(entry.get("student_id", ""))
+        if sid not in expected_student_ids:
+            continue
+        raw_score = float(entry.get("verified_score", 0))
+        verified[sid] = {
+            "verified_score": max(0.0, min(raw_score, max_points)),
+            "score_changed": bool(entry.get("score_changed", False)),
+            "verification_comment": entry.get("verification_comment", ""),
+            "confidence": entry.get("confidence", "medium"),
+            "needs_review": entry.get("needs_review", False),
+        }
+
+    # 欠落学生は needs_review=True でフラグ
+    for sid in expected_student_ids:
+        if sid not in verified:
+            verified[sid] = {
+                "verified_score": None,
+                "score_changed": False,
+                "verification_comment": "検証APIの応答に含まれていません",
+                "confidence": "low",
+                "needs_review": True,
+            }
+
+    return verified
+
+
 def parse_horizontal_grading_result(
     result: dict,
     question: Question,
@@ -883,6 +1026,8 @@ def score_student_by_question(
             name, scores = parse_single_question_result(result, question)
             if name:
                 student_name = name
+            for qs in scores:
+                qs.ai_score = qs.score
             all_scores.extend(scores)
 
         except Exception as e:
@@ -894,11 +1039,13 @@ def score_student_by_question(
                     all_scores.append(QuestionScore(
                         question_id=sq.id, score=0, max_points=sq.points,
                         comment=f"採点エラー: {e}", confidence="low", needs_review=True,
+                        ai_score=0.0,
                     ))
             else:
                 all_scores.append(QuestionScore(
                     question_id=str(question.id), score=0, max_points=question.max_points,
                     comment=f"採点エラー: {e}", confidence="low", needs_review=True,
+                    ai_score=0.0,
                 ))
 
     overall_comment = ""
@@ -1000,6 +1147,7 @@ def grade_question_horizontally(
                         QuestionScore(
                             question_id=sq.id, score=0, max_points=sq.points,
                             comment=f"採点エラー: {e}", confidence="low", needs_review=True,
+                            ai_score=0.0,
                         )
                         for sq in question.sub_questions
                     ]
@@ -1007,9 +1155,89 @@ def grade_question_horizontally(
                     all_scores[sid] = [QuestionScore(
                         question_id=str(question.id), score=0, max_points=question.max_points,
                         comment=f"採点エラー: {e}", confidence="low", needs_review=True,
+                        ai_score=0.0,
                     )]
 
     return all_scores, errors
+
+
+VERIFICATION_BATCH_SIZE = 10
+
+
+def verify_question_scores(
+    provider: "ScoringProvider",
+    question: Question,
+    rubric_title: str,
+    scores_by_student: dict[str, list[QuestionScore]],
+    students_answers: list[tuple[str, str, str]],
+    notes: str = "",
+    batch_size: int = VERIFICATION_BATCH_SIZE,
+) -> list[str]:
+    """初回採点結果を検証し、score_changed の場合にスコアを更新する。
+
+    scores_by_student を直接変更する。戻り値はエラーリスト。
+    """
+    errors: list[str] = []
+
+    # student_id → (student_name, transcribed_text) マップ
+    answer_map = {sid: (sname, text) for sid, sname, text in students_answers}
+
+    # 検証用データを構築
+    verify_entries: list[tuple[str, str, str, float, float, str]] = []
+    for sid, q_scores in scores_by_student.items():
+        if sid not in answer_map:
+            continue
+        sname, text = answer_map[sid]
+        # descriptive は小問なしなので q_scores[0] を使う
+        qs = q_scores[0]
+        verify_entries.append((sid, sname, text, qs.score, qs.max_points, qs.comment))
+
+    if not verify_entries:
+        return errors
+
+    batches = [
+        verify_entries[i:i + batch_size]
+        for i in range(0, len(verify_entries), batch_size)
+    ]
+
+    for batch_idx, batch in enumerate(batches):
+        expected_ids = [sid for sid, *_ in batch]
+        try:
+            result = provider.verify_question_batch(
+                question=question,
+                rubric_title=rubric_title,
+                student_scores_with_answers=batch,
+                notes=notes,
+            )
+            verified = parse_verification_result(
+                result, expected_ids, float(question.max_points),
+            )
+        except Exception as e:
+            error_msg = f"問{question.id} 検証バッチ{batch_idx + 1}: {e}"
+            errors.append(error_msg)
+            # 検証エラー時は初回スコアを維持し、needs_review を付与
+            for sid in expected_ids:
+                if sid in scores_by_student:
+                    scores_by_student[sid][0].needs_review = True
+                    scores_by_student[sid][0].comment += "\n\n【検証結果】検証APIエラーのため未検証。"
+            continue
+
+        # 検証結果をマージ
+        for sid, info in verified.items():
+            if sid not in scores_by_student:
+                continue
+            qs = scores_by_student[sid][0]
+            if info["score_changed"] and info["verified_score"] is not None:
+                qs.score = info["verified_score"]
+                qs.comment += f"\n\n【検証結果】得点変更: {info['verification_comment']}"
+                qs.needs_review = True
+            else:
+                qs.comment += "\n\n【検証結果】採点妥当と判断。"
+                if info["needs_review"]:
+                    qs.needs_review = True
+            qs.confidence = info["confidence"]
+
+    return errors
 
 
 def run_horizontal_grading(
@@ -1020,6 +1248,7 @@ def run_horizontal_grading(
     batch_size: int = DEFAULT_BATCH_SIZE,
     on_question_progress: Callable[[int, int, Question, int, int], None] | None = None,
     student_ids_to_grade: list[str] | None = None,
+    enable_verification: bool = False,
 ) -> list[str]:
     """Phase 2 全体: OCR結果を使って全問を横断採点する。"""
     all_errors: list[str] = []
@@ -1086,6 +1315,29 @@ def run_horizontal_grading(
         )
         all_errors.extend(errors)
 
+        # 検証パス: 記述式かつ有効な場合
+        if enable_verification and question.question_type == "descriptive" and not question.sub_questions:
+            verify_errors = verify_question_scores(
+                provider=provider,
+                question=question,
+                rubric_title=rubric.title,
+                scores_by_student=scores_by_student,
+                students_answers=students_answers,
+                notes=rubric.notes,
+            )
+            all_errors.extend(verify_errors)
+
+        # 後処理ルール: 記述式の確信度補正
+        if question.question_type == "descriptive" and not question.sub_questions:
+            for sid, q_scores in scores_by_student.items():
+                for qs in q_scores:
+                    # 満点の記述式解答は教員確認を推奨
+                    if qs.score >= qs.max_points:
+                        qs.needs_review = True
+                    # 部分点なのに high は medium に補正
+                    if qs.confidence == "high" and 0 < qs.score < qs.max_points:
+                        qs.confidence = "medium"
+
         # 結果を StudentResult にマージ
         for sid, q_scores in scores_by_student.items():
             student = next((s for s in session.students if s.student_id == sid), None)
@@ -1107,6 +1359,8 @@ def run_horizontal_grading(
                 qs for qs in student.question_scores
                 if qs.question_id not in old_qids
             ]
+            for qs in q_scores:
+                qs.ai_score = qs.score
             student.question_scores.extend(q_scores)
 
         if on_question_progress:
@@ -1267,6 +1521,18 @@ class ScoringProvider(ABC):
             f"{self.__class__.__name__} は横断採点に未対応です"
         )
 
+    def verify_question_batch(
+        self,
+        question: Question,
+        rubric_title: str,
+        student_scores_with_answers: list[tuple[str, str, str, float, float, str]],
+        notes: str = "",
+    ) -> dict:
+        """初回採点結果を検証する（ダブルチェック方式）。テキストのみ、画像不要。"""
+        raise NotImplementedError(
+            f"{self.__class__.__name__} は採点検証に未対応です"
+        )
+
     @property
     @abstractmethod
     def name(self) -> str:
@@ -1281,13 +1547,14 @@ class GeminiProvider(ScoringProvider):
     """Google Gemini APIによる採点"""
 
     MODELS = {
+        "gemini-3.1-pro-preview": "Gemini 3.1 Pro Preview（最新・高精度）",
         "gemini-2.5-flash": "Gemini 2.5 Flash（高速・低コスト）",
         "gemini-2.5-pro": "Gemini 2.5 Pro（高精度）",
     }
 
     TIMEOUT = 120  # seconds
 
-    def __init__(self, api_key: str, model_name: str = "gemini-2.5-flash"):
+    def __init__(self, api_key: str, model_name: str = "gemini-3.1-pro-preview"):
         from google import genai
         self.client = genai.Client(api_key=api_key)
         self.model_name = model_name
@@ -1441,6 +1708,43 @@ class GeminiProvider(ScoringProvider):
         base = 8192 if question.question_type == "descriptive" else 4096
         thinking_budget = min(base + n * 256, 16384)
         response_budget = max(4096, n * 1024)
+        max_output = min(thinking_budget + response_budget, 65536)
+
+        def _call():
+            self._rate_limiter.wait()
+            response = self._call_with_timeout(
+                lambda: self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=[prompt],
+                    config=types.GenerateContentConfig(
+                        temperature=0.2,
+                        max_output_tokens=max_output,
+                        thinking_config=types.ThinkingConfig(
+                            thinking_budget=thinking_budget,
+                        ),
+                    ),
+                )
+            )
+            return _gemini_extract_text(response)
+
+        return _api_call_with_retry(_call)
+
+    def verify_question_batch(self, question, rubric_title,
+                               student_scores_with_answers, notes=""):
+        from google.genai import types
+
+        prompt = (
+            VERIFICATION_SYSTEM_PROMPT + "\n\n"
+            + build_verification_prompt(
+                question=question, rubric_title=rubric_title,
+                student_scores_with_answers=student_scores_with_answers,
+                notes=notes,
+            )
+        )
+
+        n = len(student_scores_with_answers)
+        thinking_budget = min(8192 + n * 256, 16384)
+        response_budget = max(4096, n * 512)
         max_output = min(thinking_budget + response_budget, 65536)
 
         def _call():
@@ -1633,6 +1937,30 @@ class AnthropicProvider(ScoringProvider):
 
         return _api_call_with_retry(_call)
 
+    def verify_question_batch(self, question, rubric_title,
+                               student_scores_with_answers, notes=""):
+        prompt = build_verification_prompt(
+            question=question, rubric_title=rubric_title,
+            student_scores_with_answers=student_scores_with_answers,
+            notes=notes,
+        )
+
+        n = len(student_scores_with_answers)
+        max_tokens = min(2048 + n * 256, 16384)
+
+        def _call():
+            self._rate_limiter.wait()
+            response = self.client.messages.create(
+                model=self.model_name,
+                max_tokens=max_tokens,
+                temperature=0.2,
+                system=VERIFICATION_SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": [{"type": "text", "text": prompt}]}],
+            )
+            return response.content[0].text
+
+        return _api_call_with_retry(_call)
+
 
 # ============================================================
 # デモプロバイダー
@@ -1670,6 +1998,40 @@ class DemoProvider(ScoringProvider):
     def grade_question_batch(self, question, rubric_title,
                               students_answers, reference_info=None, notes=""):
         return generate_demo_horizontal_scores(question, students_answers)
+
+    def verify_question_batch(self, question, rubric_title,
+                               student_scores_with_answers, notes=""):
+        return generate_demo_verification(student_scores_with_answers)
+
+
+def generate_demo_verification(
+    student_scores_with_answers: list[tuple[str, str, str, float, float, str]],
+) -> dict:
+    """デモ用の検証結果"""
+    results = []
+    for sid, sname, text, score, mp, comment in student_scores_with_answers:
+        changed = random.random() > 0.7  # 30%の確率で変更
+        if changed:
+            delta = random.choice([-1, -2, 1])
+            new_score = max(0, min(score + delta, mp))
+            results.append({
+                "student_id": sid,
+                "verified_score": new_score,
+                "score_changed": True,
+                "verification_comment": f"[デモ] 要素の評価を再検討し {score}→{new_score} に修正",
+                "confidence": "medium",
+                "needs_review": True,
+            })
+        else:
+            results.append({
+                "student_id": sid,
+                "verified_score": score,
+                "score_changed": False,
+                "verification_comment": "[デモ] 採点基準に照らして妥当",
+                "confidence": random.choice(["high", "medium"]),
+                "needs_review": random.random() > 0.8,
+            })
+    return {"results": results}
 
 
 def generate_demo_scores(rubric: Rubric) -> dict:
