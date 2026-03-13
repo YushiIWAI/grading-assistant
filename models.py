@@ -9,6 +9,34 @@ from typing import Optional
 
 
 @dataclass
+class School:
+    """学校（テナント）"""
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    name: str = ""
+    slug: str = ""
+    retention_days: int = 365
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    updated_at: str = ""
+
+
+@dataclass
+class User:
+    """ユーザー"""
+    id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    school_id: str = ""
+    email: str = ""
+    hashed_password: str = ""
+    display_name: str = ""
+    role: str = "teacher"  # "admin" | "teacher" | "viewer"
+    is_active: bool = True
+    mfa_secret: Optional[str] = None
+    mfa_enabled: bool = False
+    mfa_backup_codes: Optional[str] = None  # JSON文字列: ["code1", "code2", ...]
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    updated_at: str = ""
+
+
+@dataclass
 class SubQuestion:
     """小問（漢字の読みなど個別の小問）"""
     id: str
@@ -110,6 +138,8 @@ class ScoringSession:
     students: list[StudentResult] = field(default_factory=list)
     ocr_results: list[StudentOcr] = field(default_factory=list)
     grading_mode: str = "legacy"  # "legacy" | "horizontal"
+    school_id: str | None = None
+    created_by: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -132,7 +162,11 @@ class ScoringSession:
             ocr_results.append(ocr_obj)
         data["ocr_results"] = ocr_results
 
-        return cls(**data)
+        # 未知のキーを除外（DBカラム追加時の互換性確保）
+        import dataclasses as _dc
+        valid_keys = {f.name for f in _dc.fields(cls)}
+        filtered = {k: v for k, v in data.items() if k in valid_keys}
+        return cls(**filtered)
 
     def get_reference_students(self) -> list[StudentResult]:
         """参考例としてマークされた学生を返す"""

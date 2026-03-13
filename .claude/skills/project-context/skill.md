@@ -11,38 +11,53 @@ AI採点はあくまで参考値であり、最終判断は教師が行う設計
 ## 技術スタック
 - 言語: Python 3
 - UI: Streamlit (>=1.33.0)
+- API: FastAPI (v0.2.0) — 認証・セッション・OCR・採点の全エンドポイント
+- DB: SQLAlchemy Core + Alembic — PostgreSQL（本番）/ SQLite（テスト・開発）
+- 認証: 自前 JWT（PyJWT + bcrypt）— アクセストークン + リフレッシュトークン
 - AI: Google Gemini API (google-genai, 推奨) / Anthropic Claude API (anthropic, オプション)
 - PDF処理: PyMuPDF (>=1.24.0)
 - 画像処理: Pillow (>=10.0.0)
 - 設定: PyYAML (>=6.0) — ルーブリック定義
 - 環境変数: python-dotenv
-- テスト: pytest (>=8.0.0)
+- テスト: pytest (>=8.0.0) — 157テスト
 - バージョン管理: Git（mainブランチ）
+- インフラ: Docker Compose（PostgreSQL 16 Alpine）
 
 ## ディレクトリ構成
 ```
 grading-assistant/
-├── app.py                # メインStreamlitアプリ
-├── api_client.py         # Streamlit から API を呼ぶためのクライアント
+├── app.py                # メインStreamlitアプリ（JWT認証 or レガシーパスワード）
+├── api_client.py         # Streamlit → API クライアント（認証トークン付き）
+├── auth.py               # 認証ユーティリティ（bcrypt + JWT）
 ├── rubric_io.py          # ルーブリック変換・YAML入出力の共通モジュール
-├── models.py             # データモデル（Rubric, Question, StudentResult等）
+├── models.py             # データモデル（Rubric, Question, School, User, ScoringSession等）
 ├── scoring_engine.py     # 採点エンジン（マルチAPI対応）
 ├── pdf_processor.py      # PDF→画像変換・処理
-├── storage.py            # セッション永続化（JSON）・CSVエクスポート
+├── provider_factory.py   # プロバイダ構築（APIキー未設定時のDemoフォールバック）
+├── encryption.py         # 保存時暗号化（Fernet対称暗号、ENCRYPTION_KEY環境変数）
+├── storage.py            # DB永続化（セッション・School・User CRUD・テナント分離・監査ログ・削除・パージ）
+├── db.py                 # SQLAlchemy Core テーブル定義・エンジン管理（audit_logs含む）
 ├── api/
-│   └── app.py            # FastAPIによるAPIレイヤー（フェーズ1の初期スライス）
+│   ├── app.py            # FastAPI（認証・セッション・OCR・採点エンドポイント）
+│   └── deps.py           # FastAPI 認証依存関係（CurrentUser, get_optional_user）
+├── alembic/              # DBマイグレーション
+├── docker-compose.yml    # PostgreSQL 16 Alpine
 ├── requirements.txt      # 依存パッケージ
-├── .env.example          # 環境変数テンプレート（APIキー）
-├── docs/adr/             # アーキテクチャ判断記録
+├── .env.example          # 環境変数テンプレート（DB・JWT・APIキー・暗号化鍵）
+├── docs/
+│   ├── adr/              # アーキテクチャ判断記録
+│   └── privacy-policy-draft.md  # プライバシーポリシードラフト
 ├── rubrics/              # 採点ルーブリック定義（YAML）
-│   ├── sample_rubric.yaml
-│   ├── test_rubric.yaml
-│   └── todai_rubric.yaml
-├── tests/                # テストスイート（pytest）
-│   ├── conftest.py       # 共有フィクスチャ
+├── tests/                # テストスイート（pytest, 157テスト）
+│   ├── conftest.py       # 共有フィクスチャ（test_db, test_school, test_user, auth_headers）
 │   ├── test_models.py
 │   ├── test_scoring_engine.py
-│   └── test_storage.py
+│   ├── test_storage.py   # School/User CRUD + テナント分離 + 削除/パージ/エクスポートテスト
+│   ├── test_auth.py      # パスワードハッシュ・JWT生成/検証テスト
+│   ├── test_audit.py     # 監査ログ（記録・検索・チェーン検証）テスト
+│   ├── test_encryption.py # 暗号化（Fernet）テスト
+│   ├── test_api.py       # 認証 + テナント分離 + 削除/監査ログ/管理者APIテスト
+│   └── test_api_client.py
 ├── data/                 # 保存済み採点セッション（JSON）
 ├── output/               # エクスポート結果
 ├── test_data/            # サンプルPDF
@@ -53,12 +68,14 @@ grading-assistant/
 ## 主要モジュール
 
 ### models.py — データモデル
+- `School`: 学校（id, name, slug, created_at, updated_at）— マルチテナントの単位
+- `User`: ユーザー（id, school_id, email, hashed_password, display_name, role, is_active）
 - `Rubric`: 試験メタデータと問題定義（title, total_points, pages_per_student, questions, notes）
 - `Question` / `SubQuestion`: 個別問題（配点・解答タイプ: short_answer / descriptive / selection）
 - `StudentResult`: 生徒別採点結果（is_reference フラグで教員採点を参考例としてAIに提供可能）
 - `QuestionScore`: 問題別スコア（信頼度・要レビューフラグ・ai_score バックアップ付き）
-- `ScoringSession`: 複数生徒を含む採点セッション全体
-  - `from_dict()` / `to_dict()`: JSON永続化用シリアライズ
+- `ScoringSession`: 複数生徒を含む採点セッション全体（+ school_id, created_by でテナント紐付け）
+  - `from_dict()` / `to_dict()`: JSON永続化用シリアライズ（未知キーは自動フィルタ）
   - `get_reference_students()`: 参考例マーク済み学生の取得
   - `get_ocr_for_student()` / `get_all_answers_for_question()`: OCRデータアクセス
   - `ocr_complete()`: 全学生OCR完了判定
@@ -99,13 +116,43 @@ grading-assistant/
 - `rubric_to_yaml()`: `Rubric` → YAML文字列
 - `rubric_summary()`: API / UI向け要約情報
 
-### storage.py — セッション永続化
-- `save_session()` / `load_session()` / `list_sessions()`: JSON形式でのセッション永続化（`data/` ディレクトリ）
-- `export_csv()`: 採点結果をCSV文字列にエクスポート（設問ごとの得点・配点・読取・コメント・確信度・要確認を列に展開）
-- `export_csv_file()`: CSVファイル出力（BOM付きUTF-8でExcel対応、`output/` ディレクトリ）
+### auth.py — 認証ユーティリティ
+- `hash_password(plain) → str`: bcryptハッシュ
+- `verify_password(plain, hashed) → bool`: パスワード検証
+- `create_access_token(user_id, school_id, role) → str`: JWTアクセストークン（claims: sub, school_id, role, type="access", exp, iat）
+- `create_refresh_token(user_id) → str`: JWTリフレッシュトークン（type="refresh"）
+- `decode_token(token) → dict`: JWT検証・デコード
+- 設定: `JWT_SECRET_KEY`, `JWT_ACCESS_TOKEN_EXPIRE_MINUTES`(30), `JWT_REFRESH_TOKEN_EXPIRE_DAYS`(7)
+
+### encryption.py — 保存時暗号化
+- `encrypt_json(data) → str | None`: JSON化可能なデータをFernet暗号化。`ENCRYPTION_KEY` 未設定時はNone
+- `decrypt_json(encrypted) → Any | None`: 暗号化文字列を復号。鍵不一致やエラー時はNone
+- `encrypt_text(text) → str | None` / `decrypt_text(encrypted) → str | None`: テキスト暗号化・復号
+- `is_encryption_enabled() → bool`: 暗号化有効判定
+- 方式: Fernet（AES-128-CBC + HMAC-SHA256）
+
+### storage.py — DB永続化・テナント分離・監査ログ・削除
+- `save_session(session, school_id=None, created_by=None)` / `load_session(session_id, school_id=None)` / `list_sessions(school_id=None)`: セッション永続化（school_id指定時はテナントフィルタ、暗号化カラム対応）
+- `create_school()` / `get_school()` / `get_school_by_slug()`: 学校CRUD
+- `create_user()` / `get_user()` / `get_user_by_email()`: ユーザーCRUD
+- `seed_admin_user()`: 環境変数からデフォルト学校+管理者を冪等作成（CLI: `python -m storage seed-admin`）
+- `export_csv()`: 採点結果をCSV文字列にエクスポート
+- `export_csv_file()`: CSVファイル出力（BOM付きUTF-8でExcel対応）
+- `log_audit_event()`: 監査ログ記録（HMACチェーンで改ざん検知）
+- `list_audit_logs()`: 監査ログ検索（school_id, action, resource_type/id でフィルタ）
+- `verify_audit_chain()`: HMACチェーンの整合性検証
+- `delete_session()`: セッション削除（テナント検証付き、監査ログ記録）
+- `purge_expired_sessions()`: 保存期間超過セッションの一括削除（学校別retention_days）
+- `export_school_data()`: 学校全データエクスポート（解約・データポータビリティ用）
+- `delete_school_data()`: 学校全データ完全削除（解約時）
+
+### api/deps.py — FastAPI認証依存関係
+- `CurrentUser`: JWT由来の認証済みユーザー情報（user_id, school_id, role）
+- `get_current_user()`: 認証必須（401を返す）
+- `get_optional_user()`: 認証オプショナル（ヘッダーなし→None、後方互換）
 
 ### app.py — UI
-- **認証**: `check_password()` — 共通パスワード認証（`st.secrets["password"]`、未設定時はスルー）
+- **認証**: `check_auth()` — JWT認証（email+password）優先、ユーザー未登録時は旧パスワード認証にフォールバック
 - **ルーブリック管理**: `api_client.py` 経由で API の parse/render を呼ぶ
 - **プロバイダ構築**: `build_provider()` — session_state の設定を `provider_factory.py` に委譲し、UI/API で同じフォールバック規則を使う
 - PDFアップロード・生徒ごとのページ分割
@@ -115,22 +162,26 @@ grading-assistant/
 - API利用に関するプライバシー同意
 - **UI装飾ヘルパー**: `status_badge_html()`, `confidence_badge_html()`, `review_needed_badge_html()`, `progress_ring_html()`（SVG円形進捗リング）
 
-### api/app.py — FastAPI 初期スライス
-- `GET /healthz`: APIヘルスチェック
-- `POST /api/v1/rubrics/parse`: YAML採点基準のパースと要約取得
-- `POST /api/v1/rubrics/render`: Rubric相当dictを YAML に戻す
-- `GET /api/v1/sessions`: 保存済みセッション一覧
-- `POST /api/v1/sessions`: セッションの新規作成
-- `GET /api/v1/sessions/{session_id}` / `PUT /api/v1/sessions/{session_id}`: セッション取得・保存
-- `GET /api/v1/sessions/{session_id}/exports/csv`: CSVエクスポート文字列
-- `POST /api/v1/runs/ocr`: PDF + rubric + provider設定を受け取り、OCRを実行してセッション更新
-- `POST /api/v1/runs/horizontal-grading`: 保存済みセッションに対して横断採点を実行してセッション更新
+### api/app.py — FastAPI v0.3.0
+- **認証エンドポイント**:
+  - `POST /api/v1/auth/login`: email+password → access_token + refresh_token
+  - `POST /api/v1/auth/refresh`: refresh_token → 新access_token
+  - `GET /api/v1/auth/me`: 認証済みユーザー情報
+- **ルーブリック**: `/api/v1/rubrics/parse`, `/render`, `/refine`
+- **セッション**: `/api/v1/sessions` (CRUD + DELETE) + `/exports/csv` — 全て `get_optional_user` でテナント分離
+- **実行**: `/api/v1/runs/ocr`, `/api/v1/runs/horizontal-grading` — テナント検証付き
+- **監査ログ**: `GET /api/v1/audit-logs`（検索）, `GET /api/v1/audit-logs/verify`（チェーン検証）
+- **管理者**: `POST /api/v1/admin/purge-expired`（期限切れパージ）, `GET /api/v1/admin/schools/{id}/export`（全データエクスポート）, `DELETE /api/v1/admin/schools/{id}`（全データ削除）
+- `GET /healthz`: ヘルスチェック
+- **設計**: 全ルートが `get_optional_user` を使用（認証ヘッダーなしでも動作、移行期の後方互換）。全操作に監査ログ記録
 
 ### api_client.py — API クライアント
-- `GRADING_API_BASE_URL` が設定されていれば外部APIへ HTTP 接続
+- `GRADING_API_BASE_URL` が設定されていれば外部APIへ HTTP 接続（認証トークン自動付与）
 - 未設定時はローカル FastAPI app を直接呼ぶため、開発中も追加起動なしで API 境界を維持できる
-- `load_rubric_from_yaml()` / `rubric_to_yaml()` / `list_sessions()` / `load_session()` / `save_session()` / `export_csv()` を提供
-- `run_ocr()` / `run_horizontal_grading()` で OCR・採点開始も API 経由化
+- **認証**: `set_auth_token()` / `login()` / `refresh_access_token()` / `get_me()`
+- **データ**: `load_rubric_from_yaml()` / `rubric_to_yaml()` / `list_sessions()` / `load_session()` / `save_session()` / `export_csv()`
+- **実行**: `run_ocr()` / `run_horizontal_grading()` / `refine_rubric()`
+- `_request()` にて `_auth_token` セット済みなら `Authorization: Bearer` ヘッダー自動付与
 
 ## 起動方法
 ```bash
@@ -138,8 +189,15 @@ python3 -m streamlit run app.py
 ```
 
 ## 環境変数
+- `DATABASE_URL` — DB接続文字列（デフォルト: SQLite `data/grading.db`、本番: PostgreSQL）
+- `JWT_SECRET_KEY` — JWT署名キー（必須、本番では強力なランダム文字列）
+- `JWT_ACCESS_TOKEN_EXPIRE_MINUTES` — アクセストークン有効期限（デフォルト: 30）
+- `JWT_REFRESH_TOKEN_EXPIRE_DAYS` — リフレッシュトークン有効期限（デフォルト: 7）
+- `ADMIN_EMAIL` / `ADMIN_PASSWORD` — 初期管理者（`python -m storage seed-admin` で使用）
 - `GOOGLE_API_KEY` — Google Gemini APIキー（推奨）
-- `ANTHROPIC_API_KEY` — Anthropic APIキー（オプション、$5最低チャージ必要）
+- `ANTHROPIC_API_KEY` — Anthropic APIキー（オプション）
+- `ENCRYPTION_KEY` — Fernet暗号化鍵（未設定時は暗号化無効）。生成: `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`
+- `GRADING_API_BASE_URL` — 外部APIサーバーURL（未設定時はローカル直接呼び出し）
 
 ---
 
@@ -231,6 +289,25 @@ python3 -m streamlit run app.py
 
 #### テスト: 58テスト全パス（既存54 + 検証系4テスト）
 
+### Phase 1B: 認証・マルチテナント・セキュリティ基盤 ✅ 全完了（2026-03-13）
+
+#### 認証・テナント基盤
+1. ✅ 依存追加（PyJWT, bcrypt, psycopg2-binary, cryptography）+ Docker Compose（PostgreSQL 16）
+2. ✅ DBスキーマ拡張 — `schools`, `users`, `audit_logs` テーブル追加、`scoring_sessions` に暗号化カラム追加
+3. ✅ ドメインモデル追加 — `School`（retention_days付き）, `User` データクラス
+4. ✅ 認証モジュール `auth.py` — bcryptハッシュ + JWT（access/refresh）
+5. ✅ ストレージ層拡張 — School/User CRUD、テナント分離フィルタ
+6. ✅ FastAPI認証 — `api/deps.py`（get_optional_user）、3認証エンドポイント、全ルート保護
+7. ✅ Streamlit統合 — `check_auth()` でJWT認証優先、レガシーパスワードにフォールバック
+
+#### セキュリティ・データ保護
+8. ✅ 監査ログ — `audit_logs` テーブル + HMACチェーンによる改ざん検知、全操作に記録
+9. ✅ 保存時暗号化 — Fernet（AES-128-CBC + HMAC-SHA256）、暗号化カラムと平文カラムの併存
+10. ✅ 保存期間・削除設計 — 学校別 retention_days、自動パージ、手動削除、解約時全データエクスポート・完全削除
+11. ✅ プライバシーポリシードラフト — `docs/privacy-policy-draft.md`（法務レビュー前）
+
+#### テスト: 157テスト全パス
+
 ### テスト実行
 ```bash
 python3 -m pytest tests/ -v
@@ -253,13 +330,11 @@ python3 -m pytest tests/ -v
 必ず `productization-roadmap.md` を確認してから設計判断を行うこと。
 
 ### 直近の対応状況（2026-03-13）
-- ✅ 外部AI送信前の氏名マスキングを実装。Gemini / Claude に送る画像は、先頭ページ上部をマスクしたコピーへ自動差し替え
-- ✅ OCRプロンプトを調整し、マスキング時は `student_name` を空文字で返すよう明示
-- ✅ サイドバーに氏名欄位置・マスク幅/高さの設定を追加（既定ON）
-- ✅ API First 移行のADRを追加。FastAPI / PostgreSQL / RLS / Alembic 方針を文書化
-- ✅ `rubric_io.py` と `api/app.py` を追加し、ルーブリック変換とセッション永続化の初期APIを実装
-- ✅ `api_client.py` を追加し、Streamlit のルーブリック変換・セッション保存/読込・CSV出力を API 経由へ切り替え
-- ✅ OCR開始・まとめ採点・お手本再採点も API run エンドポイント経由へ切り替え
-- ✅ `provider_factory.py` に APIキー未設定時の Demo フォールバックを集約し、`DemoProvider` に `privacy_mask` 初期化を明示
-- ✅ `api_client.py` の HTTP エラーハンドリングをログ付きにし、`rubric_to_yaml()` の空レスポンスを明示的に失敗扱いへ変更
-- ✅ AnthropicProvider の画像前処理回帰テスト、氏名マスキング、provider fallback のテストを追加し、`python3 -m pytest tests/ -q` で 90 tests passed
+- ✅ Phase 1B 全完了（認証・テナント + セキュリティ・データ保護）— 157テスト全パス
+- 認証基盤: JWT（bcrypt + PyJWT）、マルチテナント、FastAPI認証、Streamlit統合
+- 監査ログ: `audit_logs` テーブル + HMACチェーン改ざん検知、全API操作に記録
+- 保存時暗号化: `encryption.py`（Fernet）、`ENCRYPTION_KEY` 環境変数、暗号化カラムと平文カラム併存
+- 削除設計: `delete_session`, `purge_expired_sessions`, `export_school_data`, `delete_school_data`
+- 保存期間: `School.retention_days`（デフォルト365日）、学校別設定可能
+- プライバシーポリシー: `docs/privacy-policy-draft.md`（法務レビュー前）
+- 管理者API: パージ、学校データエクスポート・完全削除

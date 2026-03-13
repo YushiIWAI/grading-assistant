@@ -764,7 +764,7 @@ RUBRIC_REVIEW_SYSTEM_PROMPT = """\
 {
   "questions": [
     {
-      "question_id": "対象の設問ID",
+      "question_id": "対象の設問ID（数字のみ。例: \"2\"。「問」は付けない）",
       "aspect": "質問の観点（上記1-5のいずれか）",
       "sample_answer": "想定されるボーダーライン解答の例",
       "question": "教員への具体的な質問",
@@ -849,7 +849,7 @@ RUBRIC_REFINE_SYSTEM_PROMPT = """\
 {
   "questions": [
     {
-      "question_id": "対象の設問ID",
+      "question_id": "対象の設問ID（数字のみ。例: \"2\"。「問」は付けない）",
       "aspect": "質問の観点（上記1-5のいずれか）",
       "student_answer": "実際の学生の解答（引用）",
       "student_id": "解答した学生のID",
@@ -2043,8 +2043,8 @@ class GeminiProvider(ScoringProvider):
 
     MODELS = {
         "gemini-3.1-pro-preview": "Gemini 3.1 Pro Preview（最新・高精度）",
-        "gemini-2.5-flash": "Gemini 2.5 Flash（高速・低コスト）",
         "gemini-2.5-pro": "Gemini 2.5 Pro（高精度）",
+        "gemini-2.5-flash": "Gemini 2.5 Flash（高速・低コスト）",
     }
 
     TIMEOUT = 120  # seconds

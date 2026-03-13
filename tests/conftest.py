@@ -9,9 +9,10 @@ import sqlalchemy as sa
 # プロジェクトルートをパスに追加
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from auth import create_access_token, hash_password
 from models import (
-    OcrAnswer, Question, QuestionScore, Rubric, ScoringSession,
-    StudentOcr, StudentResult, SubQuestion,
+    OcrAnswer, Question, QuestionScore, Rubric, School, ScoringSession,
+    StudentOcr, StudentResult, SubQuestion, User,
 )
 import db as db_module
 import storage
@@ -125,3 +126,64 @@ def sample_session(sample_rubric):
         session.students.append(student)
 
     return session
+
+
+@pytest.fixture
+def test_school(test_db):
+    """テスト用学校"""
+    school = School(name="テスト学校", slug="test-school")
+    storage.create_school(school)
+    return school
+
+
+@pytest.fixture
+def test_user(test_db, test_school):
+    """テスト用教員ユーザー"""
+    user = User(
+        school_id=test_school.id,
+        email="teacher@test.example.com",
+        hashed_password=hash_password("testpassword"),
+        display_name="テスト教員",
+        role="teacher",
+    )
+    storage.create_user(user)
+    return user
+
+
+@pytest.fixture
+def auth_headers(test_user):
+    """認証済みリクエスト用のAuthorizationヘッダー"""
+    token = create_access_token(test_user.id, test_user.school_id, test_user.role)
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture
+def admin_user(test_db, test_school):
+    """テスト用管理者ユーザー"""
+    user = User(
+        school_id=test_school.id,
+        email="admin@test.example.com",
+        hashed_password=hash_password("adminpassword"),
+        display_name="テスト管理者",
+        role="admin",
+    )
+    storage.create_user(user)
+    return user
+
+
+@pytest.fixture
+def admin_headers(admin_user):
+    """管理者用のAuthorizationヘッダー"""
+    token = create_access_token(admin_user.id, admin_user.school_id, admin_user.role)
+    return {"Authorization": f"Bearer {token}"}
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiters():
+    """各テスト実行前にレート制限をリセットする。"""
+    from api.app import _login_limiter, _mfa_verify_limiter
+    _login_limiter.reset()
+    _mfa_verify_limiter.reset()
+    yield
+    _login_limiter.reset()
+    _mfa_verify_limiter.reset()

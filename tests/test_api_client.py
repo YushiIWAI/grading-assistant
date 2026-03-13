@@ -15,6 +15,13 @@ def _build_pdf_bytes() -> bytes:
     return doc.tobytes()
 
 
+def _set_auth_for_api_client(test_user):
+    """api_client にテスト用認証トークンをセットする。"""
+    from auth import create_access_token
+    token = create_access_token(test_user.id, test_user.school_id, test_user.role)
+    api_client.set_auth_token(token)
+
+
 def test_rubric_round_trip_via_local_api(sample_rubric, monkeypatch):
     monkeypatch.delenv("GRADING_API_BASE_URL", raising=False)
 
@@ -25,8 +32,9 @@ def test_rubric_round_trip_via_local_api(sample_rubric, monkeypatch):
     assert len(loaded.questions) == len(sample_rubric.questions)
 
 
-def test_session_round_trip_via_local_api(sample_session, test_db, monkeypatch):
+def test_session_round_trip_via_local_api(sample_session, test_db, monkeypatch, test_user):
     monkeypatch.delenv("GRADING_API_BASE_URL", raising=False)
+    _set_auth_for_api_client(test_user)
 
     created = api_client.create_session_record("API Client Test", "answers.pdf", 1)
     assert created.rubric_title == "API Client Test"
@@ -46,8 +54,9 @@ def test_session_round_trip_via_local_api(sample_session, test_db, monkeypatch):
     assert "学生番号,氏名,状態" in csv_text
 
 
-def test_run_ocr_and_horizontal_grading_via_local_api(sample_rubric, test_db, monkeypatch):
+def test_run_ocr_and_horizontal_grading_via_local_api(sample_rubric, test_db, monkeypatch, test_user):
     monkeypatch.delenv("GRADING_API_BASE_URL", raising=False)
+    _set_auth_for_api_client(test_user)
 
     session = api_client.create_session_record(
         sample_rubric.title,
@@ -77,8 +86,9 @@ def test_run_ocr_and_horizontal_grading_via_local_api(sample_rubric, test_db, mo
     assert session.students[0].status == "ai_scored"
 
 
-def test_refine_rubric_via_local_api(sample_session, sample_rubric, test_db, monkeypatch):
+def test_refine_rubric_via_local_api(sample_session, sample_rubric, test_db, monkeypatch, test_user):
     monkeypatch.delenv("GRADING_API_BASE_URL", raising=False)
+    _set_auth_for_api_client(test_user)
 
     # sample_session にはOCR結果がある
     api_client.save_session(sample_session)
@@ -108,7 +118,7 @@ def test_request_wraps_httpx_errors(monkeypatch, caplog):
         def __exit__(self, exc_type, exc, tb):
             return False
 
-        def request(self, method, path, json=None):
+        def request(self, method, path, json=None, headers=None):
             request = httpx.Request(method, f"https://example.test{path}")
             raise httpx.ConnectError("network down", request=request)
 

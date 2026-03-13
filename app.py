@@ -16,6 +16,7 @@ from pathlib import Path
 import streamlit as st
 from dotenv import load_dotenv
 
+import api_client
 from api_client import (
     ApiClientError,
     create_session_record,
@@ -56,15 +57,75 @@ st.set_page_config(
 )
 
 
-# --- パスワード認証 ---
-def check_password() -> bool:
-    """共通パスワードによる簡易認証。正しいパスワードなら True を返す。"""
+# --- 認証 ---
+def check_auth() -> bool:
+    """JWT認証またはレガシーパスワード認証。成功時にTrueを返す。"""
+    # 既に認証済みの場合: トークンを復元
     if st.session_state.get("authenticated"):
+        token = st.session_state.get("access_token")
+        if token:
+            api_client.set_auth_token(token)
         return True
 
+    # DBにユーザーが存在するか確認（/auth/me で判定）
+    try:
+        me_result = api_client.get_me()
+    except Exception:
+        me_result = {"authenticated": False}
+
+    # ユーザーが登録されていない場合: レガシーパスワード認証にフォールバック
+    has_users = _check_has_users()
+    if not has_users:
+        return _check_legacy_password()
+
+    # JWT ログインフォーム
+    st.markdown(
+        "<h2 style='text-align:center; margin-top:2rem;'>📝 国語 採点支援</h2>"
+        "<p style='text-align:center; color:#64748b;'>メールアドレスとパスワードでログインしてください</p>",
+        unsafe_allow_html=True,
+    )
+    with st.form("login_form"):
+        email = st.text_input("メールアドレス")
+        password = st.text_input("パスワード", type="password")
+        submitted = st.form_submit_button("ログイン", use_container_width=True)
+        if submitted and email and password:
+            try:
+                result = api_client.login(email, password)
+                st.session_state["authenticated"] = True
+                st.session_state["access_token"] = result["access_token"]
+                st.session_state["refresh_token"] = result["refresh_token"]
+                st.session_state["user"] = result["user"]
+                api_client.set_auth_token(result["access_token"])
+                st.rerun()
+            except ApiClientError:
+                st.error("メールアドレスまたはパスワードが正しくありません")
+    return False
+
+
+def _check_has_users() -> bool:
+    """DBにユーザーが1人でも登録されているか確認する。"""
+    try:
+        from storage import get_user_by_email
+        # seed-admin のデフォルトメールで存在チェック（軽量な方法）
+        admin_email = os.environ.get("ADMIN_EMAIL", "admin@example.com")
+        if get_user_by_email(admin_email):
+            return True
+        # 任意のユーザーが存在するかの簡易チェック
+        from db import get_engine, init_db, users
+        import sqlalchemy as sa
+        init_db()
+        engine = get_engine()
+        with engine.connect() as conn:
+            row = conn.execute(sa.select(users.c.id).limit(1)).fetchone()
+        return row is not None
+    except Exception:
+        return False
+
+
+def _check_legacy_password() -> bool:
+    """レガシーの共通パスワード認証（ユーザー未登録時のフォールバック）。"""
     password = st.secrets.get("password", "")
     if not password:
-        # secrets にパスワード未設定 → 認証なしで通す（ローカル開発用）
         return True
 
     st.markdown(
@@ -84,7 +145,7 @@ def check_password() -> bool:
     return False
 
 
-if not check_password():
+if not check_auth():
     st.stop()
 
 # --- カスタムCSS ---
@@ -885,44 +946,52 @@ with tab_scoring:
         st.markdown(f'<div style="display:flex;align-items:flex-start;justify-content:center;padding:12px 16px;margin-bottom:16px;background:white;border-radius:12px;border:1px solid #e2e8f0;">{_step_html}</div>', unsafe_allow_html=True)
 
     # --- PDF読み込み ---
-    st.subheader("答案PDFのアップロード")
-    st.caption("スキャンした答案のPDFファイルを取り込みます。")
+    # @st.fragment で隔離し、ファイル選択時のリランがタブ選択をリセットするのを防ぐ
+    @st.fragment
+    def _pdf_upload_fragment():
+        st.subheader("答案PDFのアップロード")
+        st.caption("スキャンした答案のPDFファイルを取り込みます。")
 
-    col_pdf1, col_pdf2 = st.columns([2, 1])
-    with col_pdf1:
-        pdf_file = st.file_uploader("答案PDFファイル", type=["pdf"], key="pdf_uploader")
-    with col_pdf2:
-        if st.session_state.rubric:
-            pages_per = st.number_input(
-                "1人あたりのページ数",
-                min_value=1, max_value=10,
-                value=st.session_state.rubric.pages_per_student,
-            )
-        else:
-            pages_per = st.number_input("1人あたりのページ数", min_value=1, max_value=10, value=1)
-
-    if pdf_file and st.button("答案を取り込む", type="primary"):
-        with st.spinner("PDFを画像に変換中..."):
-            pdf_bytes = pdf_file.read()
-            st.session_state.pdf_bytes = pdf_bytes
-            images = pdf_to_images(pdf_bytes)
-            st.session_state.images = images
-            if len(images) % pages_per != 0:
-                st.warning(
-                    f"総ページ数 {len(images)} は「1人あたり{pages_per}ページ」で割り切れません。"
-                    f"最後の学生のページが不完全になる可能性があります。"
+        col_pdf1, col_pdf2 = st.columns([2, 1])
+        with col_pdf1:
+            pdf_file = st.file_uploader("答案PDFファイル", type=["pdf"], key="pdf_uploader")
+        with col_pdf2:
+            if st.session_state.rubric:
+                pages_per = st.number_input(
+                    "1人あたりのページ数",
+                    min_value=1, max_value=10,
+                    value=st.session_state.rubric.pages_per_student,
                 )
-            groups = split_pages_by_student(images, pages_per)
-            st.session_state.student_groups = groups
-            st.success(f"{len(images)}ページ → {len(groups)}名分に分割しました")
+            else:
+                pages_per = st.number_input("1人あたりのページ数", min_value=1, max_value=10, value=1)
 
-    # プレビュー
-    if st.session_state.student_groups:
-        with st.expander(f"答案プレビュー（{len(st.session_state.student_groups)}名分）"):
-            preview_idx = st.slider("学生番号", 1, len(st.session_state.student_groups), 1, key="preview_slider")
-            group = st.session_state.student_groups[preview_idx - 1]
-            for page_num, img in group:
-                st.image(image_to_bytes(img), caption=f"ページ {page_num}", use_container_width=True)
+        if pdf_file and st.button("答案を取り込む", type="primary"):
+            with st.spinner("PDFを画像に変換中..."):
+                pdf_bytes = pdf_file.read()
+                st.session_state.pdf_bytes = pdf_bytes
+                st.session_state.pdf_filename = pdf_file.name
+                images = pdf_to_images(pdf_bytes)
+                st.session_state.images = images
+                if len(images) % pages_per != 0:
+                    st.warning(
+                        f"総ページ数 {len(images)} は「1人あたり{pages_per}ページ」で割り切れません。"
+                        f"最後の学生のページが不完全になる可能性があります。"
+                    )
+                groups = split_pages_by_student(images, pages_per)
+                st.session_state.student_groups = groups
+                st.success(f"{len(images)}ページ → {len(groups)}名分に分割しました")
+                # fragment外（OCRセクション等）を更新するためアプリ全体をリラン
+                st.rerun(scope="app")
+
+        # プレビュー
+        if st.session_state.student_groups:
+            with st.expander(f"答案プレビュー（{len(st.session_state.student_groups)}名分）"):
+                preview_idx = st.slider("学生番号", 1, len(st.session_state.student_groups), 1, key="preview_slider")
+                group = st.session_state.student_groups[preview_idx - 1]
+                for page_num, img in group:
+                    st.image(image_to_bytes(img), caption=f"ページ {page_num}", use_container_width=True)
+
+    _pdf_upload_fragment()
 
     st.divider()
 
@@ -983,7 +1052,7 @@ with tab_scoring:
 
                 session = create_session_record(
                     rubric_title=rubric.title,
-                    pdf_filename=pdf_file.name if pdf_file else "uploaded.pdf",
+                    pdf_filename=st.session_state.get("pdf_filename", "uploaded.pdf"),
                     pages_per_student=rubric.pages_per_student,
                 )
                 two_stage = st.session_state.get("enable_two_stage_ocr", True)
@@ -1030,14 +1099,11 @@ with tab_scoring:
             # 一括確認ボタン
             unreviewed = [o for o in session.ocr_results if o.status == "ocr_done" and not o.ocr_error]
             if unreviewed:
-                def _bulk_review_ocr(ocr_list, sess):
-                    for o in ocr_list:
+                if st.button(f"全て確認済みにする（{len(unreviewed)}名）", key="ocr_bulk_review"):
+                    for o in unreviewed:
                         o.status = "reviewed"
-                    save_session(sess)
-                    st.session_state.session = sess
-
-                st.button(f"全て確認済みにする（{len(unreviewed)}名）", key="ocr_bulk_review",
-                          on_click=_bulk_review_ocr, args=(unreviewed, session))
+                    save_session(session)
+                    st.rerun()
 
             for ocr in session.ocr_results:
                 if ocr.status == "pending" and ocr.ocr_error:
@@ -1110,13 +1176,10 @@ with tab_scoring:
                                     st.caption("(手動修正済み)")
 
                     if ocr.status != "reviewed":
-                        def _review_ocr(ocr_obj, sess):
-                            ocr_obj.status = "reviewed"
-                            save_session(sess)
-                            st.session_state.session = sess
-
-                        st.button("確認済みにする", key=f"ocr_review_{ocr.student_id}",
-                                  on_click=_review_ocr, args=(ocr, session))
+                        if st.button("確認済みにする", key=f"ocr_review_{ocr.student_id}"):
+                            ocr.status = "reviewed"
+                            save_session(session)
+                            st.rerun()
 
             if st.button("読み取り結果を保存", key="save_ocr"):
                 save_session(session)
@@ -1428,10 +1491,10 @@ with tab_review:
         # 表示モード切替
         review_mode = st.radio(
             "表示モード",
-            ["学生別", "一覧テーブル"],
+            ["学生別", "問い別", "一覧テーブル"],
             horizontal=True,
             key="review_view_mode",
-            help="「一覧テーブル」では全学生の得点を一覧で確認・編集できます",
+            help="「問い別」では同じ設問に対する全学生の回答を横並びで比較できます。「一覧テーブル」では全学生の得点を一覧で確認・編集できます",
         )
 
         if review_mode == "一覧テーブル":
@@ -1483,6 +1546,155 @@ with tab_review:
                     st.success("保存しました")
                     st.rerun()
 
+        # --- 問い別モード ---
+        if review_mode == "問い別":
+            rubric = st.session_state.rubric
+            if not rubric or not rubric.questions:
+                st.info("採点基準（ルーブリック）が設定されていません。「1. 準備」タブで設定してください。")
+            else:
+                scored_students = [s for s in session.students if s.status != "pending"]
+                if not scored_students:
+                    st.info("まだ採点済みの学生がいません。")
+                else:
+                    # 問い選択
+                    all_question_ids = []
+                    q_label_map = {}
+                    for q in rubric.questions:
+                        if q.sub_questions:
+                            for sq in q.sub_questions:
+                                qid = f"{q.id}-{sq.id}"
+                                all_question_ids.append(qid)
+                                q_label_map[qid] = f"問{qid}: {sq.text[:30]}" if sq.text else f"問{qid}"
+                        else:
+                            qid = str(q.id)
+                            all_question_ids.append(qid)
+                            q_label_map[qid] = f"問{qid}: {q.description[:30]}" if q.description else f"問{qid}"
+
+                    selected_qid = st.selectbox(
+                        "設問を選択",
+                        all_question_ids,
+                        format_func=lambda x: q_label_map.get(x, f"問{x}"),
+                        key="qview_question_select",
+                    )
+
+                    # 採点基準の表示
+                    for q in rubric.questions:
+                        if str(q.id) == selected_qid:
+                            with st.expander("採点基準", expanded=False):
+                                st.markdown(f"**配点:** {q.max_points}点")
+                                if q.model_answer:
+                                    st.markdown(f"**模範解答:** {q.model_answer}")
+                                if q.scoring_criteria:
+                                    st.markdown(f"**基準:** {q.scoring_criteria}")
+                            break
+                        if q.sub_questions:
+                            for sq in q.sub_questions:
+                                if f"{q.id}-{sq.id}" == selected_qid:
+                                    with st.expander("採点基準", expanded=False):
+                                        st.markdown(f"**配点:** {sq.points}点")
+                                        st.markdown(f"**模範解答:** {sq.answer}")
+                                    break
+
+                    # フィルタ
+                    qview_filter_col1, qview_filter_col2 = st.columns(2)
+                    with qview_filter_col1:
+                        qview_sort = st.selectbox(
+                            "並び順",
+                            ["得点（低い順）", "得点（高い順）", "学生番号順"],
+                            key="qview_sort",
+                        )
+                    with qview_filter_col2:
+                        qview_review_only = st.checkbox(
+                            "要確認のみ表示", value=False, key="qview_review_only",
+                        )
+
+                    # データ収集
+                    q_entries = []
+                    for s in scored_students:
+                        for qs in s.question_scores:
+                            if qs.question_id == selected_qid:
+                                if qview_review_only and not (qs.needs_review and not qs.reviewed):
+                                    continue
+                                q_entries.append((s, qs))
+                                break
+
+                    # ソート
+                    if qview_sort == "得点（低い順）":
+                        q_entries.sort(key=lambda x: x[1].score)
+                    elif qview_sort == "得点（高い順）":
+                        q_entries.sort(key=lambda x: x[1].score, reverse=True)
+                    else:
+                        q_entries.sort(key=lambda x: x[0].student_id)
+
+                    # スコア分布サマリー
+                    if q_entries:
+                        scores = [qs.score for _, qs in q_entries]
+                        max_pts = q_entries[0][1].max_points
+                        avg = sum(scores) / len(scores)
+                        full_marks = sum(1 for sc in scores if sc >= max_pts)
+                        zero_marks = sum(1 for sc in scores if sc <= 0)
+                        review_count = sum(1 for _, qs in q_entries if qs.needs_review and not qs.reviewed)
+
+                        mcol1, mcol2, mcol3, mcol4, mcol5 = st.columns(5)
+                        mcol1.metric("対象人数", len(q_entries))
+                        mcol2.metric("平均点", f"{avg:.1f}/{max_pts}")
+                        mcol3.metric("満点", full_marks)
+                        mcol4.metric("0点", zero_marks)
+                        mcol5.metric("要確認", review_count)
+
+                    st.divider()
+
+                    # 各学生の回答を表示
+                    for student, qs in q_entries:
+                        conf_color = get_confidence_color(qs.confidence)
+                        review_mark = "⚠️ " if qs.needs_review and not qs.reviewed else ""
+                        verified_mark = " ✓検証済" if "【検証結果】" in qs.comment else ""
+
+                        with st.expander(
+                            f"{review_mark}{student.student_id} {student.student_name or '(氏名不明)'}"
+                            f" — {qs.score}/{qs.max_points}点"
+                            f" (自信度: {format_confidence(qs.confidence)}){verified_mark}",
+                            expanded=(qs.needs_review and not qs.reviewed),
+                        ):
+                            qc1, qc2 = st.columns([3, 1])
+                            with qc1:
+                                st.text_area(
+                                    "読み取りテキスト", value=qs.transcribed_text,
+                                    key=f"qview_trans_{student.student_id}_{qs.question_id}",
+                                    height=68, disabled=True,
+                                )
+                                if qs.comment:
+                                    st.info(f"💬 {qs.comment}")
+                            with qc2:
+                                new_score = st.number_input(
+                                    "得点", min_value=0.0, max_value=float(qs.max_points),
+                                    value=float(qs.score), step=0.5,
+                                    key=f"qview_score_{student.student_id}_{qs.question_id}",
+                                )
+                                if new_score != qs.score:
+                                    qs.score = new_score
+                                    student.recalculate_total()
+                                    save_session(session)
+                                st.caption(f"/ {qs.max_points}点")
+
+                                if qs.ai_score is not None and abs(qs.score - qs.ai_score) > 0.01:
+                                    if st.button(
+                                        f"AIスコアに戻す ({qs.ai_score:.1f}点)",
+                                        key=f"qview_restore_{student.student_id}_{qs.question_id}",
+                                    ):
+                                        qs.score = qs.ai_score
+                                        student.recalculate_total()
+                                        save_session(session)
+                                        st.rerun()
+
+                                if qs.needs_review and not qs.reviewed:
+                                    if qs.review_reason:
+                                        st.warning(f"🔍 {qs.review_reason}")
+                                    if st.button("確認済み", key=f"qview_rev_{student.student_id}_{qs.question_id}"):
+                                        qs.reviewed = True
+                                        save_session(session)
+                                        st.rerun()
+
         # --- 学生別モード: フィルターと個別表示 ---
         if review_mode != "学生別":
             status_filter = ["ai_scored", "pending"]
@@ -1525,36 +1737,28 @@ with tab_review:
             bulk_col1, bulk_col2, bulk_col3 = st.columns([1, 1, 2])
             with bulk_col1:
                 if _safe_to_confirm:
-                    def _bulk_confirm(students, sess):
-                        for s in students:
-                            s.status = "confirmed"
-                        save_session(sess)
-                        st.session_state.session = sess
-
-                    st.button(
+                    if st.button(
                         f"要確認なしの{len(_safe_to_confirm)}名を一括確定",
-                        on_click=_bulk_confirm,
-                        args=(_safe_to_confirm, session),
                         type="primary",
                         key="bulk_confirm_btn",
-                    )
+                    ):
+                        for s in _safe_to_confirm:
+                            s.status = "confirmed"
+                        save_session(session)
+                        st.rerun()
             with bulk_col2:
                 if _needs_review_students:
                     _total_review = sum(s.review_needed_count() for s in _needs_review_students)
-                    def _bulk_mark_reviewed(students, sess):
-                        for s in students:
+                    if st.button(
+                        f"要確認{_total_review}件を確認済みに",
+                        key="bulk_review_btn",
+                    ):
+                        for s in _needs_review_students:
                             for qs in s.question_scores:
                                 if qs.needs_review:
                                     qs.reviewed = True
-                        save_session(sess)
-                        st.session_state.session = sess
-
-                    st.button(
-                        f"要確認{_total_review}件を確認済みに",
-                        on_click=_bulk_mark_reviewed,
-                        args=(_needs_review_students, session),
-                        key="bulk_review_btn",
-                    )
+                        save_session(session)
+                        st.rerun()
             with bulk_col3:
                 st.caption(f"表示中: {len(filtered)}名 / 全{len(session.students)}名")
 
@@ -1613,30 +1817,23 @@ with tab_review:
                         st.caption(f"/ {qs.max_points}点")
 
                         if qs.ai_score is not None and abs(qs.score - qs.ai_score) > 0.01:
-                            def _restore_ai_score(q_score, s, sess):
-                                q_score.score = q_score.ai_score
-                                s.recalculate_total()
-                                save_session(sess)
-                                st.session_state.session = sess
-
-                            st.button(
+                            if st.button(
                                 f"AIスコアに戻す ({qs.ai_score:.1f}点)",
                                 key=f"restore_ai_{student.student_id}_{qs.question_id}",
-                                on_click=_restore_ai_score,
-                                args=(qs, student, session),
-                            )
+                            ):
+                                qs.score = qs.ai_score
+                                student.recalculate_total()
+                                save_session(session)
+                                st.rerun()
 
                         if qs.needs_review and not qs.reviewed:
                             if qs.review_reason:
                                 st.warning(f"🔍 **教員確認ポイント:** {qs.review_reason}")
 
-                            def _mark_reviewed(q_score, sess):
-                                q_score.reviewed = True
-                                save_session(sess)
-                                st.session_state.session = sess
-
-                            st.button("確認済み", key=f"rev_{student.student_id}_{qs.question_id}",
-                                      on_click=_mark_reviewed, args=(qs, session))
+                            if st.button("確認済み", key=f"rev_{student.student_id}_{qs.question_id}"):
+                                qs.reviewed = True
+                                save_session(session)
+                                st.rerun()
 
                 st.divider()
                 notes = st.text_area(
@@ -1645,30 +1842,24 @@ with tab_review:
                 )
                 student.reviewer_notes = notes
 
-                def _confirm_student(s, sess):
-                    s.status = "confirmed"
-                    save_session(sess)
-                    st.session_state.session = sess
-
-                def _toggle_reference(s, sess):
-                    s.is_reference = not s.is_reference
-                    save_session(sess)
-                    st.session_state.session = sess
-
                 bcol1, bcol2, bcol3 = st.columns(3)
                 with bcol1:
                     if student.status not in ("confirmed", "reviewed"):
-                        st.button("確定する", key=f"mk_conf_{student.student_id}",
-                                  on_click=_confirm_student, args=(student, session))
+                        if st.button("確定する", key=f"mk_conf_{student.student_id}"):
+                            student.status = "confirmed"
+                            save_session(session)
+                            st.rerun()
                 with bcol2:
                     ref_label = "お手本の指定を解除" if student.is_reference else "お手本に指定する"
                     if student.status in ("reviewed", "confirmed"):
-                        st.button(ref_label, key=f"ref_{student.student_id}",
-                                  on_click=_toggle_reference, args=(student, session))
+                        if st.button(ref_label, key=f"ref_{student.student_id}"):
+                            student.is_reference = not student.is_reference
+                            save_session(session)
+                            st.rerun()
                 with bcol3:
                     if st.button("保存", key=f"save_{student.student_id}"):
                         save_session(session)
-                        st.success("保存しました")
+                        st.rerun()
 
                 if student.is_reference:
                     st.caption("📌 この答案はAI再採点のお手本として使用されます")

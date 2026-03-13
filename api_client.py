@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import contextvars
 import logging
 import os
 from dataclasses import asdict
@@ -19,6 +20,60 @@ class ApiClientError(RuntimeError):
 
 
 logger = logging.getLogger(__name__)
+
+# --- 認証トークン管理 ---
+# contextvars を使い、Streamlit の複数ユーザーセッション間でトークンが混線しないようにする。
+_auth_token_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "_auth_token_var", default=None
+)
+
+
+def set_auth_token(token: str | None) -> None:
+    """APIリクエストに付与するアクセストークンを設定する。"""
+    _auth_token_var.set(token)
+
+
+def get_auth_token() -> str | None:
+    """現在設定されているアクセストークンを返す。"""
+    return _auth_token_var.get()
+
+
+# --- Auth API ---
+
+
+def login(email: str, password: str) -> dict[str, Any]:
+    """メール+パスワードでログインし、トークン情報を返す。"""
+    response = _request(
+        "POST",
+        "/api/v1/auth/login",
+        json={"email": email, "password": password},
+    )
+    if response.is_error:
+        raise ApiClientError(_extract_error_message(response))
+    return response.json()
+
+
+def refresh_access_token(refresh_token: str) -> dict[str, Any]:
+    """リフレッシュトークンから新しいアクセストークンを取得する。"""
+    response = _request(
+        "POST",
+        "/api/v1/auth/refresh",
+        json={"refresh_token": refresh_token},
+    )
+    if response.is_error:
+        raise ApiClientError(_extract_error_message(response))
+    return response.json()
+
+
+def get_me() -> dict[str, Any]:
+    """現在の認証ユーザー情報を取得する。"""
+    response = _request("GET", "/api/v1/auth/me")
+    if response.is_error:
+        raise ApiClientError(_extract_error_message(response))
+    return response.json()
+
+
+# --- Internal ---
 
 
 def _api_base_url() -> str:
@@ -49,17 +104,21 @@ def _extract_error_message(response) -> str:
 def _request(method: str, path: str, json: dict[str, Any] | None = None):
     base_url = _api_base_url()
     timeout = _api_timeout()
+    headers: dict[str, str] = {}
+    token = _auth_token_var.get()
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
 
     try:
         if base_url:
             with httpx.Client(base_url=base_url, timeout=timeout) as client:
-                response = client.request(method, path, json=json)
+                response = client.request(method, path, json=json, headers=headers)
         else:
             from fastapi.testclient import TestClient
             from api.app import app
 
             with TestClient(app) as client:
-                response = client.request(method, path, json=json)
+                response = client.request(method, path, json=json, headers=headers)
     except httpx.HTTPError as exc:
         logger.exception("HTTP API呼び出しに失敗しました: %s %s", method, path)
         raise ApiClientError(f"API呼び出しに失敗しました: {exc}") from exc
@@ -68,6 +127,9 @@ def _request(method: str, path: str, json: dict[str, Any] | None = None):
         raise ApiClientError(f"API呼び出しに失敗しました: {exc}") from exc
 
     return response
+
+
+# --- Rubric API ---
 
 
 def load_rubric_from_yaml(yaml_text: str) -> Rubric:
@@ -89,6 +151,9 @@ def rubric_to_yaml(rubric: Rubric) -> str:
     if not yaml_text.strip():
         raise ApiClientError("ルーブリック YAML の生成結果が空です")
     return yaml_text
+
+
+# --- Session API ---
 
 
 def list_sessions() -> list[dict[str, Any]]:
@@ -134,8 +199,10 @@ def save_session(session: ScoringSession) -> ScoringSession:
     )
     if response.is_error:
         raise ApiClientError(_extract_error_message(response))
-    saved = ScoringSession.from_dict(response.json()["session"])
-    session.__dict__.update(saved.__dict__)
+    # サーバー側で付与される updated_at のみ同期する。
+    saved_data = response.json().get("session", {})
+    if "updated_at" in saved_data:
+        session.updated_at = saved_data["updated_at"]
     return session
 
 
@@ -168,6 +235,9 @@ def refine_rubric(
     if response.is_error:
         raise ApiClientError(_extract_error_message(response))
     return response.json()["questions"]
+
+
+# --- Run API ---
 
 
 def run_ocr(
