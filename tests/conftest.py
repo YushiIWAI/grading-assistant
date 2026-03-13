@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 import pytest
+import sqlalchemy as sa
 
 # プロジェクトルートをパスに追加
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -12,6 +13,33 @@ from models import (
     OcrAnswer, Question, QuestionScore, Rubric, ScoringSession,
     StudentOcr, StudentResult, SubQuestion,
 )
+import db as db_module
+import storage
+
+
+@pytest.fixture
+def test_db(tmp_path, monkeypatch):
+    """テスト用 SQLite DB を tmp_path 内に作成し、storage/db がそれを使うようにする。
+
+    テスト終了後にエンジンを破棄する。
+    """
+    db_path = tmp_path / "test_grading.db"
+    test_url = f"sqlite:///{db_path}"
+
+    # db モジュールのエンジンをリセットしてテスト用 URL で再作成
+    db_module.reset_engine()
+    engine = db_module.get_engine(test_url)
+    db_module.init_db(engine)
+
+    # OUTPUT_DIR も tmp_path に向ける
+    output_dir = tmp_path / "output"
+    output_dir.mkdir()
+    monkeypatch.setattr(storage, "OUTPUT_DIR", output_dir)
+
+    yield engine
+
+    # teardown
+    db_module.reset_engine()
 
 
 @pytest.fixture

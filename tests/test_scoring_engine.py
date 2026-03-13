@@ -1,12 +1,17 @@
 """scoring_engine.py のユニットテスト"""
 
 import json
+import sys
 import time
+from types import SimpleNamespace
 
 import pytest
+from PIL import Image
 
 from models import Question, SubQuestion
 from scoring_engine import (
+    AnthropicProvider,
+    DemoProvider,
     RateLimiter,
     _extract_json,
     _thinking_budget_for_question,
@@ -15,6 +20,9 @@ from scoring_engine import (
     SCORING_SCHEMA,
     HORIZONTAL_SCHEMA,
     VERIFICATION_SCHEMA,
+    build_ocr_prompt,
+    build_ocr_prompt_with_layout,
+    build_rubric_refine_prompt,
     parse_ocr_result,
     parse_scoring_result,
     parse_single_question_result,
@@ -148,6 +156,107 @@ class TestParseOcrResult:
         ids = {a.question_id for a in answers}
         assert "1-1" in ids
         assert "2" in ids
+
+
+class TestOcrPrompt:
+    def test_name_is_required_when_unmasked(self, sample_rubric):
+        prompt = build_ocr_prompt(sample_rubric, include_student_name=True)
+        assert "学生の氏名も読み取ってください。" in prompt
+        assert '"student_name": "読み取れた氏名（不明なら空文字）"' in prompt
+
+    def test_name_is_blank_when_masked(self, sample_rubric):
+        prompt = build_ocr_prompt(sample_rubric, include_student_name=False)
+        assert "student_name は必ず空文字を返してください。" in prompt
+        assert '"student_name": "",' in prompt
+
+    def test_layout_prompt_keeps_name_blank_when_masked(self, sample_rubric):
+        layout = {
+            "overall_structure": "1ページ目上部に氏名欄、中央に記述欄",
+            "pages": [
+                {
+                    "page_number": 1,
+                    "regions": [
+                        {"question_id": "1-1", "location": "中央左", "size_hint": "1行分"},
+                    ],
+                },
+            ],
+        }
+        prompt = build_ocr_prompt_with_layout(
+            sample_rubric,
+            layout,
+            include_student_name=False,
+        )
+        assert "student_name は必ず空文字を返してください。" in prompt
+        assert '"student_name": "",' in prompt
+
+
+@pytest.mark.parametrize(
+    ("method_name", "response_text"),
+    [
+        ("score_student", json.dumps({"scores": [], "overall_comment": ""})),
+        ("score_question", json.dumps({"scores": []})),
+        (
+            "analyze_layout",
+            json.dumps(
+                {
+                    "pages": [{"page_number": 1, "regions": []}],
+                    "overall_structure": "1ページ構成",
+                }
+            ),
+        ),
+        ("ocr_student", json.dumps({"student_name": "", "answers": []})),
+    ],
+)
+def test_anthropic_provider_prepares_images_for_all_image_methods(
+    monkeypatch,
+    sample_rubric,
+    method_name,
+    response_text,
+):
+    class FakeAnthropicClient:
+        def __init__(self, api_key, timeout):
+            self.messages = SimpleNamespace(create=lambda **kwargs: None)
+
+    monkeypatch.setitem(
+        sys.modules,
+        "anthropic",
+        SimpleNamespace(Anthropic=FakeAnthropicClient),
+    )
+
+    provider = AnthropicProvider(api_key="test-key")
+    provider.client = SimpleNamespace(
+        messages=SimpleNamespace(
+            create=lambda **kwargs: SimpleNamespace(
+                content=[SimpleNamespace(text=response_text)]
+            )
+        )
+    )
+
+    prepare_calls = []
+
+    def fake_prepare(self, images):
+        prepare_calls.append(images)
+        return images
+
+    monkeypatch.setattr(
+        AnthropicProvider,
+        "_prepare_images_for_external_ai",
+        fake_prepare,
+    )
+
+    images = [Image.new("RGB", (10, 10), color=(255, 255, 255))]
+    method = getattr(provider, method_name)
+
+    if method_name == "score_student":
+        method(images, sample_rubric)
+    elif method_name == "score_question":
+        method(images, sample_rubric.questions[0], sample_rubric.title)
+    elif method_name == "analyze_layout":
+        method(images, sample_rubric)
+    else:
+        method(images, sample_rubric)
+
+    assert prepare_calls == [images]
 
 
 # ============================================================
@@ -423,3 +532,74 @@ class TestBuildVerificationPrompt:
         assert "10.0/14.0" in prompt
         assert "要素Aを満たす" in prompt
         assert "verified_score" in prompt
+
+
+# ============================================================
+# build_rubric_refine_prompt
+# ============================================================
+
+class TestBuildRubricRefinePrompt:
+    def test_builds_prompt_with_answers(self, sample_rubric):
+        ocr_answers = {
+            "2": [
+                ("S001", "人間の弱さを表現している"),
+                ("S002", "矛盾した心理を描いている"),
+            ],
+        }
+        prompt = build_rubric_refine_prompt(sample_rubric, ocr_answers)
+        assert "問2" in prompt
+        assert "S001" in prompt
+        assert "人間の弱さを表現している" in prompt
+        assert "S002" in prompt
+        assert "模範解答" in prompt
+
+    def test_empty_for_no_descriptive(self):
+        from models import Rubric, Question
+        rubric = Rubric(
+            title="短答のみ",
+            total_points=10,
+            pages_per_student=1,
+            questions=[
+                Question(id=1, description="漢字", question_type="short_answer", max_points=10),
+            ],
+        )
+        prompt = build_rubric_refine_prompt(rubric, {"1": [("S001", "テスト")]})
+        assert prompt == ""
+
+    def test_empty_for_no_answers(self, sample_rubric):
+        prompt = build_rubric_refine_prompt(sample_rubric, {})
+        assert prompt == ""
+
+
+# ============================================================
+# DemoProvider.refine_rubric
+# ============================================================
+
+class TestDemoProviderRefineRubric:
+    def test_returns_questions_for_descriptive(self, sample_rubric):
+        provider = DemoProvider()
+        ocr_answers = {
+            "2": [("S001", "テスト解答"), ("S002", "別の解答")],
+        }
+        result = provider.refine_rubric(sample_rubric, ocr_answers)
+        assert "questions" in result
+        assert len(result["questions"]) == 1
+        q = result["questions"][0]
+        assert q["question_id"] == "2"
+        assert q["student_answer"] == "テスト解答"
+        assert q["student_id"] == "S001"
+        assert "options" in q
+
+    def test_empty_for_short_answer_only(self):
+        from models import Rubric, Question
+        rubric = Rubric(
+            title="短答のみ",
+            total_points=10,
+            pages_per_student=1,
+            questions=[
+                Question(id=1, description="漢字", question_type="short_answer", max_points=10),
+            ],
+        )
+        provider = DemoProvider()
+        result = provider.refine_rubric(rubric, {"1": [("S001", "テスト")]})
+        assert result["questions"] == []

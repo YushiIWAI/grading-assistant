@@ -4,10 +4,87 @@ from __future__ import annotations
 
 import base64
 import io
+from dataclasses import dataclass
 from pathlib import Path
 
 import fitz  # PyMuPDF
-from PIL import Image
+from PIL import Image, ImageDraw
+
+
+@dataclass(frozen=True)
+class PrivacyMaskConfig:
+    """外部AI送信用の氏名マスキング設定。"""
+
+    enabled: bool = True
+    strategy: str = "top_right"
+    width_ratio: float = 0.36
+    height_ratio: float = 0.14
+    margin_x_ratio: float = 0.03
+    margin_y_ratio: float = 0.02
+    first_page_only: bool = True
+    fill_color: tuple[int, int, int] = (0, 0, 0)
+
+
+def _clamp_ratio(value: float, default: float) -> float:
+    """比率値を安全な範囲に丸める。"""
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        numeric = default
+    return min(max(numeric, 0.0), 1.0)
+
+
+def mask_student_name(
+    image: Image.Image,
+    config: PrivacyMaskConfig | None = None,
+) -> Image.Image:
+    """氏名欄らしき領域を黒塗りしたコピーを返す。"""
+    resolved = config or PrivacyMaskConfig()
+    masked = image.copy()
+
+    if not resolved.enabled:
+        return masked
+
+    width, height = masked.size
+    mask_height = max(1, int(height * _clamp_ratio(resolved.height_ratio, 0.14)))
+    margin_x = int(width * _clamp_ratio(resolved.margin_x_ratio, 0.03))
+    margin_y = int(height * _clamp_ratio(resolved.margin_y_ratio, 0.02))
+    y0 = min(max(0, margin_y), max(0, height - 1))
+    y1 = min(height, y0 + mask_height)
+
+    strategy = resolved.strategy
+    if strategy == "top_band":
+        x0 = 0
+        x1 = width
+    else:
+        mask_width = max(1, int(width * _clamp_ratio(resolved.width_ratio, 0.36)))
+        if strategy == "top_left":
+            x0 = min(max(0, margin_x), max(0, width - 1))
+            x1 = min(width, x0 + mask_width)
+        else:
+            x1 = max(1, width - margin_x)
+            x0 = max(0, x1 - mask_width)
+
+    ImageDraw.Draw(masked).rectangle((x0, y0, x1, y1), fill=resolved.fill_color)
+    return masked
+
+
+def mask_images_for_external_ai(
+    images: list[Image.Image],
+    config: PrivacyMaskConfig | None = None,
+) -> list[Image.Image]:
+    """外部AI送信用に画像をマスキングしたコピーを返す。"""
+    resolved = config or PrivacyMaskConfig()
+    masked_images: list[Image.Image] = []
+
+    for index, image in enumerate(images):
+        should_mask = resolved.enabled and (not resolved.first_page_only or index == 0)
+        if should_mask:
+            masked_images.append(mask_student_name(image, resolved))
+        else:
+            masked_images.append(image.copy())
+
+    return masked_images
 
 
 def pdf_to_images(pdf_bytes: bytes, dpi: int = 200) -> list[Image.Image]:

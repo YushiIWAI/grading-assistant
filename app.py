@@ -14,32 +14,38 @@ import os
 from pathlib import Path
 
 import streamlit as st
-import yaml
 from dotenv import load_dotenv
 
+from api_client import (
+    ApiClientError,
+    create_session_record,
+    export_csv,
+    list_sessions,
+    load_rubric_from_yaml,
+    load_session,
+    refine_rubric as refine_rubric_via_api,
+    run_horizontal_grading as run_horizontal_grading_via_api,
+    run_ocr as run_ocr_via_api,
+    rubric_to_yaml,
+    save_session,
+)
 from models import (
-    Rubric, Question, SubQuestion,
-    StudentResult, QuestionScore, ScoringSession,
-    StudentOcr, OcrAnswer,
+    Rubric,
 )
 from pdf_processor import (
+    PrivacyMaskConfig,
     pdf_to_images, split_pages_by_student, image_to_bytes,
 )
+from provider_factory import build_provider as build_provider_from_config
+from rubric_io import rubric_from_dict
 from scoring_engine import (
-    GeminiProvider, AnthropicProvider, DemoProvider,
-    parse_scoring_result,
-    score_student_by_question,
-    ocr_all_students,
-    run_horizontal_grading,
+    AnthropicProvider,
+    DemoProvider,
+    GeminiProvider,
     analyze_batch_calibration,
     DEFAULT_BATCH_SIZE,
     recommend_batch_size,
 )
-from storage import (
-    save_session, load_session, list_sessions,
-    export_csv,
-)
-
 load_dotenv()
 
 # --- ページ設定 ---
@@ -220,9 +226,14 @@ DEFAULTS = {
     "images": [],
     "student_groups": [],
     "rubric": None,
+    "pdf_bytes": b"",
     "gemini_key": os.getenv("GOOGLE_API_KEY", ""),
     "anthropic_key": os.getenv("ANTHROPIC_API_KEY", ""),
     "privacy_accepted": False,
+    "mask_student_name": True,
+    "mask_strategy": "top_right",
+    "mask_width_percent": 36,
+    "mask_height_percent": 14,
     # ルーブリックビルダー用
     "rb_title": "国語テスト",
     "rb_total": 100,
@@ -233,68 +244,6 @@ DEFAULTS = {
 for k, v in DEFAULTS.items():
     if k not in st.session_state:
         st.session_state[k] = v
-
-
-# ============================================================
-# ユーティリティ
-# ============================================================
-
-def load_rubric_from_yaml(yaml_text: str) -> Rubric:
-    """YAML文字列から採点基準を読み込む"""
-    data = yaml.safe_load(yaml_text)
-    exam = data.get("exam_info", data)
-    questions = []
-    for qdata in data.get("questions", []):
-        subs = []
-        for sq in qdata.get("sub_questions", []):
-            subs.append(SubQuestion(
-                id=str(sq["id"]), text=sq.get("text", ""),
-                answer=sq.get("answer", ""), points=sq.get("points", 0),
-            ))
-        questions.append(Question(
-            id=qdata["id"], description=qdata.get("description", ""),
-            question_type=qdata.get("type", "short_answer"),
-            max_points=qdata.get("max_points", 0),
-            scoring_criteria=qdata.get("scoring_criteria", ""),
-            model_answer=qdata.get("model_answer", ""),
-            sub_questions=subs,
-        ))
-    return Rubric(
-        title=exam.get("title", "無題の試験"),
-        total_points=exam.get("total_points", 100),
-        pages_per_student=exam.get("pages_per_student", 1),
-        questions=questions,
-        notes=data.get("notes", ""),
-    )
-
-
-def rubric_to_yaml(rubric: Rubric) -> str:
-    """RubricオブジェクトをYAML文字列に変換する"""
-    data = {
-        "exam_info": {
-            "title": rubric.title,
-            "total_points": rubric.total_points,
-            "pages_per_student": rubric.pages_per_student,
-        },
-        "notes": rubric.notes,
-        "questions": [],
-    }
-    for q in rubric.questions:
-        qd = {
-            "id": q.id, "description": q.description,
-            "type": q.question_type, "max_points": q.max_points,
-        }
-        if q.scoring_criteria:
-            qd["scoring_criteria"] = q.scoring_criteria
-        if q.model_answer:
-            qd["model_answer"] = q.model_answer
-        if q.sub_questions:
-            qd["sub_questions"] = [
-                {"id": sq.id, "text": sq.text, "answer": sq.answer, "points": sq.points}
-                for sq in q.sub_questions
-            ]
-        data["questions"].append(qd)
-    return yaml.dump(data, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
 
 def get_status_emoji(status: str) -> str:
@@ -362,15 +311,42 @@ def review_needed_badge_html(count: int) -> str:
 
 def build_provider():
     """現在の設定からプロバイダーを構築する"""
+    config = get_provider_config()
+    return build_provider_from_config(
+        provider_name=config["provider"],
+        api_key=config["api_key"],
+        model_name=config["model_name"],
+        privacy_mask=PrivacyMaskConfig(**config["privacy_mask"]),
+    )
+
+
+def get_provider_config() -> dict:
+    """現在の UI 設定を API 送信用の dict に整形する。"""
     provider_name = st.session_state.get("provider_choice", "demo")
-    if provider_name == "gemini" and st.session_state.gemini_key:
-        model = st.session_state.get("gemini_model", "gemini-3.1-pro-preview")
-        return GeminiProvider(st.session_state.gemini_key, model)
-    elif provider_name == "anthropic" and st.session_state.anthropic_key:
-        model = st.session_state.get("anthropic_model", "claude-sonnet-4-20250514")
-        return AnthropicProvider(st.session_state.anthropic_key, model)
+    if provider_name == "gemini":
+        api_key = st.session_state.get("gemini_key", "")
+        model_name = st.session_state.get("gemini_model", "gemini-3.1-pro-preview")
+    elif provider_name == "anthropic":
+        api_key = st.session_state.get("anthropic_key", "")
+        model_name = st.session_state.get("anthropic_model", "claude-sonnet-4-20250514")
     else:
-        return DemoProvider()
+        api_key = ""
+        model_name = ""
+
+    return {
+        "provider": provider_name,
+        "api_key": api_key,
+        "model_name": model_name,
+        "privacy_mask": {
+            "enabled": st.session_state.get("mask_student_name", True),
+            "strategy": st.session_state.get("mask_strategy", "top_right"),
+            "width_ratio": st.session_state.get("mask_width_percent", 36) / 100,
+            "height_ratio": st.session_state.get("mask_height_percent", 14) / 100,
+            "margin_x_ratio": 0.03,
+            "margin_y_ratio": 0.02,
+            "first_page_only": True,
+        },
+    }
 
 
 def progress_ring_html(percent: float, label: str = "", size: int = 90) -> str:
@@ -469,6 +445,51 @@ with st.sidebar:
 
     else:
         st.info("デモモード: AIを使わず、サンプルの採点結果で操作を試すことができます")
+
+    st.divider()
+
+    # --- 個人情報保護 ---
+    st.subheader("送信前の個人情報保護")
+    st.checkbox(
+        "外部AIに送る前に氏名欄をマスクする",
+        value=True,
+        key="mask_student_name",
+        help="Gemini / Claude に送る画像の先頭ページ上部を黒塗りしたコピーに差し替えます。"
+             "氏名は必要に応じて、読み取り後に手入力してください。",
+    )
+    if st.session_state.mask_student_name:
+        strategy_labels = {
+            "top_right": "右上を隠す（氏名欄が右寄りの用紙向け）",
+            "top_left": "左上を隠す（氏名欄が左寄りの用紙向け）",
+            "top_band": "上端を広く隠す（位置が一定しない場合）",
+        }
+        st.selectbox(
+            "氏名欄の位置",
+            list(strategy_labels.keys()),
+            format_func=lambda x: strategy_labels[x],
+            key="mask_strategy",
+        )
+        st.slider(
+            "マスク幅（横方向）",
+            min_value=20,
+            max_value=80,
+            value=st.session_state.mask_width_percent,
+            step=2,
+            key="mask_width_percent",
+            help="氏名欄に合わせて、黒塗りする横幅を調整します。",
+        )
+        st.slider(
+            "マスク高さ（縦方向）",
+            min_value=8,
+            max_value=25,
+            value=st.session_state.mask_height_percent,
+            step=1,
+            key="mask_height_percent",
+            help="氏名欄の高さに合わせて、黒塗りする範囲を調整します。",
+        )
+        st.caption("外部AIに送るのはマスク済み画像のみです。OCR後の氏名欄はステップ2で確認・追記できます。")
+    else:
+        st.warning("氏名を含む画像がそのまま外部AIに送信されます。学校運用では有効化を推奨します。")
 
     st.divider()
 
@@ -761,22 +782,15 @@ with tab_rubric:
                     st.error(err)
                 st.stop()
 
-            built_questions = []
-            for q in questions:
-                subs = [SubQuestion(id=s["id"], text=s["text"], answer=s["answer"], points=s["points"])
-                        for s in q.get("sub_questions", [])]
-                built_questions.append(Question(
-                    id=q["id"], description=q["description"],
-                    question_type=q["type"], max_points=q["max_points"],
-                    scoring_criteria=q.get("scoring_criteria", ""),
-                    model_answer=q.get("model_answer", ""),
-                    sub_questions=subs,
-                ))
-            rubric = Rubric(
-                title=rb_title, total_points=rb_total,
-                pages_per_student=rb_pages, questions=built_questions,
-                notes=rb_notes,
-            )
+            rubric = rubric_from_dict({
+                "exam_info": {
+                    "title": rb_title,
+                    "total_points": rb_total,
+                    "pages_per_student": rb_pages,
+                },
+                "notes": rb_notes,
+                "questions": questions,
+            })
             st.session_state.rubric = rubric
             # セッション状態を保持
             st.session_state.rb_title = rb_title
@@ -790,20 +804,16 @@ with tab_rubric:
             with st.expander("作成した採点基準のプレビュー"):
                 preview_questions = []
                 for q in questions:
-                    subs = [SubQuestion(id=s["id"], text=s["text"], answer=s["answer"], points=s["points"])
-                            for s in q.get("sub_questions", [])]
-                    preview_questions.append(Question(
-                        id=q["id"], description=q["description"],
-                        question_type=q["type"], max_points=q["max_points"],
-                        scoring_criteria=q.get("scoring_criteria", ""),
-                        model_answer=q.get("model_answer", ""),
-                        sub_questions=subs,
-                    ))
-                preview_rubric = Rubric(
-                    title=rb_title, total_points=rb_total,
-                    pages_per_student=rb_pages, questions=preview_questions,
-                    notes=rb_notes,
-                )
+                    preview_questions.append(q)
+                preview_rubric = rubric_from_dict({
+                    "exam_info": {
+                        "title": rb_title,
+                        "total_points": rb_total,
+                        "pages_per_student": rb_pages,
+                    },
+                    "notes": rb_notes,
+                    "questions": preview_questions,
+                })
                 st.code(rubric_to_yaml(preview_rubric), language="yaml")
 
     else:
@@ -833,76 +843,6 @@ with tab_rubric:
         st.divider()
         r = st.session_state.rubric
         st.success(f"設定済み: 「{r.title}」 {len(r.questions)}問 / {r.total_points}点満点")
-
-        # --- 採点基準レビューフェーズ ---
-        has_descriptive = any(q.question_type == "descriptive" for q in r.questions)
-        if has_descriptive:
-            with st.expander("📋 AIによる採点基準レビュー（推奨）", expanded=False):
-                st.caption(
-                    "AIが採点基準の曖昧な点を分析し、「こういう解答の場合どうしますか？」という質問を生成します。"
-                    "事前に回答しておくと、採点精度が向上します。"
-                )
-
-                if st.button("採点基準をレビューする", key="review_rubric_btn"):
-                    try:
-                        prov = build_provider()
-                        with st.spinner("AIが採点基準を分析中..."):
-                            review_result = prov.review_rubric(r)
-                        st.session_state.rubric_review_questions = review_result.get("questions", [])
-                    except Exception as e:
-                        st.error(f"レビューに失敗しました: {e}")
-
-                if st.session_state.get("rubric_review_questions"):
-                    review_qs = st.session_state.rubric_review_questions
-                    st.markdown(f"**{len(review_qs)}件の確認ポイントが見つかりました。**")
-
-                    for i, rq in enumerate(review_qs):
-                        st.markdown(f"---\n**問{rq.get('question_id', '?')}** — {rq.get('aspect', '')}")
-                        if rq.get("sample_answer"):
-                            st.markdown(f"> 想定解答例: 「{rq['sample_answer']}」")
-                        st.markdown(rq.get("question", ""))
-
-                        options = rq.get("options", [])
-                        if options:
-                            choice = st.radio(
-                                "回答を選択",
-                                options=options,
-                                key=f"rubric_review_{i}",
-                                index=None,
-                            )
-                            st.session_state[f"rubric_review_answer_{i}"] = choice
-                        else:
-                            answer = st.text_input(
-                                "回答を入力",
-                                key=f"rubric_review_{i}",
-                            )
-                            st.session_state[f"rubric_review_answer_{i}"] = answer
-
-                    if st.button("回答を採点基準に反映する", type="primary", key="apply_rubric_review"):
-                        clarifications = []
-                        for i, rq in enumerate(review_qs):
-                            answer = st.session_state.get(f"rubric_review_answer_{i}", "")
-                            if answer:
-                                clarifications.append({
-                                    "question_id": rq.get("question_id", ""),
-                                    "question": rq.get("question", ""),
-                                    "answer": answer,
-                                })
-
-                        # 回答を各設問の scoring_criteria に追記
-                        for cl in clarifications:
-                            for q in r.questions:
-                                if str(q.id) == cl["question_id"]:
-                                    addition = f"\n\n【教員補足】Q: {cl['question']} → A: {cl['answer']}"
-                                    q.scoring_criteria += addition
-                                    break
-
-                        if clarifications:
-                            st.session_state.rubric_review_questions = []
-                            st.success(f"{len(clarifications)}件の補足を採点基準に反映しました。")
-                            st.rerun()
-                        else:
-                            st.warning("回答が入力されていません。")
 
         st.info("**次のステップ →** 「2. 答案の取り込みと仮採点」タブに進んで、答案PDFをアップロードしてください。")
 
@@ -964,6 +904,7 @@ with tab_scoring:
     if pdf_file and st.button("答案を取り込む", type="primary"):
         with st.spinner("PDFを画像に変換中..."):
             pdf_bytes = pdf_file.read()
+            st.session_state.pdf_bytes = pdf_bytes
             images = pdf_to_images(pdf_bytes)
             st.session_state.images = images
             if len(images) % pages_per != 0:
@@ -998,6 +939,8 @@ with tab_scoring:
         prov = build_provider()
 
         st.write(f"**試験**: {rubric.title} / **学生数**: {len(st.session_state.student_groups)}名 / **AI**: {prov.name}")
+        if st.session_state.get("mask_student_name", True) and not isinstance(prov, DemoProvider):
+            st.caption("外部AI送信時は先頭ページ上部の氏名欄を自動マスキングします。氏名はステップ2で必要に応じて補ってください。")
 
         # --- プライバシー通知 ---
         is_api = not isinstance(prov, DemoProvider)
@@ -1033,49 +976,48 @@ with tab_scoring:
             st.success(f"読み取り完了: {ocr_ok}名分" + (f"（{ocr_err}名分は読み取れませんでした）" if ocr_err else ""))
         elif can_run:
             if st.button("文字の読み取りを開始", type="primary", key="start_ocr"):
-                session = ScoringSession(
+                pdf_bytes = st.session_state.get("pdf_bytes", b"")
+                if not pdf_bytes:
+                    st.error("OCR実行用のPDFデータが見つかりません。もう一度「答案を取り込む」を押してください。")
+                    st.stop()
+
+                session = create_session_record(
                     rubric_title=rubric.title,
                     pdf_filename=pdf_file.name if pdf_file else "uploaded.pdf",
                     pages_per_student=rubric.pages_per_student,
                 )
-
-                total = len(st.session_state.student_groups)
-                progress = st.progress(0)
-                status_text = st.empty()
-                layout_info = st.empty()
-
                 two_stage = st.session_state.get("enable_two_stage_ocr", True)
-
-                def on_ocr_progress(i, total_s):
-                    status_text.text(f"読み取り中: 学生 {i + 1}/{total_s}...")
-                    progress.progress((i + 1) / total_s)
-
-                def on_layout_done(layout):
-                    layout_info.success(
-                        f"レイアウト分析完了: {layout.get('overall_structure', '')[:60]}"
+                n_students = len(st.session_state.student_groups)
+                with st.status(
+                    f"文字読み取り中... （{n_students}名分）",
+                    expanded=True,
+                ) as ocr_status:
+                    st.write(f"**{n_students}名**の答案を読み取っています。")
+                    if two_stage:
+                        st.write("レイアウト分析 → 文字読み取り の2段階で処理します。")
+                    st.write(f"AI: **{prov.name}** / 1名あたり数秒〜十数秒かかります。")
+                    try:
+                        session, errors = run_ocr_via_api(
+                            session_id=session.session_id,
+                            rubric=rubric,
+                            pdf_bytes=pdf_bytes,
+                            provider_config=get_provider_config(),
+                            enable_two_stage=two_stage,
+                        )
+                    except ApiClientError as e:
+                        ocr_status.update(label="文字読み取りに失敗しました", state="error")
+                        st.error(f"OCRのAPI実行に失敗しました。\n（詳細: {e}）")
+                        st.stop()
+                    ocr_status.update(
+                        label=f"文字読み取り完了（{len(session.ocr_results)}名分）",
+                        state="complete",
                     )
-
-                if two_stage:
-                    status_text.text("レイアウト分析中（最初の答案で構造を認識しています）...")
-
-                ocr_results, errors = ocr_all_students(
-                    provider=prov,
-                    student_groups=st.session_state.student_groups,
-                    rubric=rubric,
-                    on_student_ocr=on_ocr_progress,
-                    enable_two_stage=two_stage,
-                    on_layout_done=on_layout_done,
-                )
-
-                session.ocr_results = ocr_results
                 st.session_state.session = session
-                save_session(session)
-                status_text.empty()
 
                 if errors:
                     for err in errors:
                         st.warning(err)
-                st.success(f"読み取り完了: {len(ocr_results)}名分")
+                st.success(f"読み取り完了: {len(session.ocr_results)}名分")
                 st.rerun()
 
         # ==========================================================
@@ -1092,6 +1034,7 @@ with tab_scoring:
                     for o in ocr_list:
                         o.status = "reviewed"
                     save_session(sess)
+                    st.session_state.session = sess
 
                 st.button(f"全て確認済みにする（{len(unreviewed)}名）", key="ocr_bulk_review",
                           on_click=_bulk_review_ocr, args=(unreviewed, session))
@@ -1170,6 +1113,7 @@ with tab_scoring:
                         def _review_ocr(ocr_obj, sess):
                             ocr_obj.status = "reviewed"
                             save_session(sess)
+                            st.session_state.session = sess
 
                         st.button("確認済みにする", key=f"ocr_review_{ocr.student_id}",
                                   on_click=_review_ocr, args=(ocr, session))
@@ -1177,6 +1121,102 @@ with tab_scoring:
             if st.button("読み取り結果を保存", key="save_ocr"):
                 save_session(session)
                 st.success("保存しました")
+
+        # ==========================================================
+        # Step 2.5: 答案駆動型の採点基準精緻化
+        # ==========================================================
+        if session and session.ocr_complete() and st.session_state.rubric:
+            _has_descriptive = any(
+                q.question_type == "descriptive"
+                for q in st.session_state.rubric.questions
+            )
+            if _has_descriptive:
+                with st.expander("採点基準を答案から精緻化する（推奨）", expanded=False):
+                    st.caption(
+                        "AIが実際の学生の解答を読み、判断が分かれそうなケースを具体的に指摘します。"
+                        "事前に回答しておくと、採点のブレが減ります。"
+                    )
+
+                    if can_run and st.button(
+                        "答案を分析して確認ポイントを抽出",
+                        key="refine_rubric_btn",
+                    ):
+                        try:
+                            with st.status(
+                                "AIが答案を分析中...",
+                                expanded=True,
+                            ) as refine_status:
+                                st.write("全学生の解答を通読し、ボーダーラインケースを抽出しています。")
+                                refine_qs = refine_rubric_via_api(
+                                    session_id=session.session_id,
+                                    rubric=st.session_state.rubric,
+                                    provider_config=get_provider_config(),
+                                )
+                                refine_status.update(
+                                    label=f"分析完了（{len(refine_qs)}件の確認ポイント）",
+                                    state="complete",
+                                )
+                            st.session_state.rubric_refine_questions = refine_qs
+                        except (ApiClientError, Exception) as e:
+                            st.error(f"答案分析に失敗しました: {e}")
+
+                    if st.session_state.get("rubric_refine_questions"):
+                        refine_qs = st.session_state.rubric_refine_questions
+                        st.markdown(f"**{len(refine_qs)}件の確認ポイントが見つかりました。**")
+
+                        for i, rq in enumerate(refine_qs):
+                            st.markdown(f"---\n**問{rq.get('question_id', '?')}** — {rq.get('aspect', '')}")
+                            student_answer = rq.get("student_answer") or rq.get("sample_answer", "")
+                            student_id = rq.get("student_id", "")
+                            if student_answer:
+                                citation = f"[{student_id}] " if student_id else ""
+                                st.markdown(f"> {citation}「{student_answer}」")
+                            st.markdown(rq.get("question", ""))
+
+                            options = rq.get("options", [])
+                            if options:
+                                choice = st.radio(
+                                    "回答を選択",
+                                    options=options,
+                                    key=f"rubric_refine_{i}",
+                                    index=None,
+                                )
+                                st.session_state[f"rubric_refine_answer_{i}"] = choice
+                            else:
+                                answer = st.text_input(
+                                    "回答を入力",
+                                    key=f"rubric_refine_{i}",
+                                )
+                                st.session_state[f"rubric_refine_answer_{i}"] = answer
+
+                        if st.button(
+                            "回答を採点基準に反映する",
+                            type="primary",
+                            key="apply_rubric_refine",
+                        ):
+                            clarifications = []
+                            for i, rq in enumerate(refine_qs):
+                                answer = st.session_state.get(f"rubric_refine_answer_{i}", "")
+                                if answer:
+                                    clarifications.append({
+                                        "question_id": rq.get("question_id", ""),
+                                        "question": rq.get("question", ""),
+                                        "answer": answer,
+                                    })
+
+                            for cl in clarifications:
+                                for q in st.session_state.rubric.questions:
+                                    if str(q.id) == cl["question_id"]:
+                                        addition = f"\n\n【教員補足】Q: {cl['question']} → A: {cl['answer']}"
+                                        q.scoring_criteria += addition
+                                        break
+
+                            if clarifications:
+                                st.session_state.rubric_refine_questions = []
+                                st.success(f"{len(clarifications)}件の補足を採点基準に反映しました。")
+                                st.rerun()
+                            else:
+                                st.warning("回答が入力されていません。")
 
         # ==========================================================
         # Step 3: まとめ採点（Phase 2）
@@ -1219,30 +1259,35 @@ with tab_scoring:
                 disabled=(already_graded and not rescore_confirmed),
             ):
                 rubric = st.session_state.rubric
-                refs = session.get_reference_students() or None
-                progress = st.progress(0)
-                status_text = st.empty()
-                total_q = len(rubric.questions)
-
-                def on_q_progress(q_idx, total, question, batch_idx, total_batches):
-                    batch_info = f"（{batch_idx + 1}/{total_batches}回目）" if total_batches > 1 else ""
-                    status_text.text(
-                        f"問{question.id} を採点中{batch_info}... ({q_idx + 1}/{total}問)"
-                    )
-                    progress.progress(min((q_idx + 1) / total, 1.0))
-
-                errors = run_horizontal_grading(
-                    provider=prov,
-                    rubric=rubric,
-                    session=session,
-                    reference_students=refs,
-                    batch_size=int(batch_size),
-                    on_question_progress=on_q_progress,
-                    enable_verification=st.session_state.get("enable_verification", False),
-                )
-
                 save_session(session)
-                status_text.empty()
+                n_questions = len(rubric.questions)
+                n_students = len(session.ocr_results)
+                verification = st.session_state.get("enable_verification", False)
+                with st.status(
+                    f"まとめ採点中... （{n_questions}問 × {n_students}名）",
+                    expanded=True,
+                ) as grading_status:
+                    st.write(f"**{n_questions}問**を**{n_students}名**分まとめて採点します。")
+                    st.write(f"AI: **{prov.name}** / バッチサイズ: {int(batch_size)}名")
+                    if verification:
+                        st.write("ダブルチェック方式が有効です（記述式問題は2パスで検証）。")
+                    try:
+                        session, errors = run_horizontal_grading_via_api(
+                            session=session,
+                            rubric=rubric,
+                            provider_config=get_provider_config(),
+                            batch_size=int(batch_size),
+                            enable_verification=verification,
+                        )
+                    except ApiClientError as e:
+                        grading_status.update(label="まとめ採点に失敗しました", state="error")
+                        st.error(f"まとめ採点のAPI実行に失敗しました。\n（詳細: {e}）")
+                        st.stop()
+                    grading_status.update(
+                        label=f"まとめ採点完了（{n_questions}問 × {n_students}名）",
+                        state="complete",
+                    )
+                st.session_state.session = session
 
                 if errors:
                     st.session_state["grading_errors"] = errors
@@ -1289,26 +1334,33 @@ with tab_scoring:
 
                 can_rerun = isinstance(build_provider(), DemoProvider) or st.session_state.privacy_accepted
                 if can_rerun and st.button("お手本を使って再採点する", type="primary", key="re_grade_horizontal"):
-                    prov = build_provider()
                     rubric = st.session_state.rubric
                     target_ids = [s.student_id for s in unconfirmed]
-                    progress = st.progress(0)
-                    status_text = st.empty()
-
-                    def on_q_progress_re(q_idx, total, question, batch_idx, total_batches):
-                        status_text.text(f"再採点: 問{question.id} ({q_idx + 1}/{total})")
-                        progress.progress(min((q_idx + 1) / total, 1.0))
-
-                    errors = run_horizontal_grading(
-                        provider=prov,
-                        rubric=rubric,
-                        session=session,
-                        reference_students=refs,
-                        batch_size=DEFAULT_BATCH_SIZE,
-                        on_question_progress=on_q_progress_re,
-                        student_ids_to_grade=target_ids,
-                        enable_verification=st.session_state.get("enable_verification", False),
-                    )
+                    save_session(session)
+                    re_prov = build_provider()
+                    with st.status(
+                        f"お手本再採点中... （{len(target_ids)}名）",
+                        expanded=True,
+                    ) as re_status:
+                        st.write(f"**{len(refs)}件のお手本**を参考に**{len(target_ids)}名**を再採点します。")
+                        st.write(f"AI: **{re_prov.name}**")
+                        try:
+                            session, errors = run_horizontal_grading_via_api(
+                                session=session,
+                                rubric=rubric,
+                                provider_config=get_provider_config(),
+                                batch_size=DEFAULT_BATCH_SIZE,
+                                enable_verification=st.session_state.get("enable_verification", False),
+                                student_ids_to_grade=target_ids,
+                            )
+                        except ApiClientError as e:
+                            re_status.update(label="再採点に失敗しました", state="error")
+                            st.error(f"再採点のAPI実行に失敗しました。\n（詳細: {e}）")
+                            st.stop()
+                        re_status.update(
+                            label=f"再採点完了（{len(target_ids)}名）",
+                            state="complete",
+                        )
 
                     for s in session.students:
                         if s.student_id in target_ids:
@@ -1317,7 +1369,7 @@ with tab_scoring:
                             )
 
                     save_session(session)
-                    status_text.empty()
+                    st.session_state.session = session
                     if errors:
                         for err in errors:
                             st.warning(err)
@@ -1477,6 +1529,7 @@ with tab_review:
                         for s in students:
                             s.status = "confirmed"
                         save_session(sess)
+                        st.session_state.session = sess
 
                     st.button(
                         f"要確認なしの{len(_safe_to_confirm)}名を一括確定",
@@ -1488,16 +1541,18 @@ with tab_review:
             with bulk_col2:
                 if _needs_review_students:
                     _total_review = sum(s.review_needed_count() for s in _needs_review_students)
-                    def _bulk_mark_reviewed(students):
+                    def _bulk_mark_reviewed(students, sess):
                         for s in students:
                             for qs in s.question_scores:
                                 if qs.needs_review:
                                     qs.reviewed = True
+                        save_session(sess)
+                        st.session_state.session = sess
 
                     st.button(
                         f"要確認{_total_review}件を確認済みに",
                         on_click=_bulk_mark_reviewed,
-                        args=(_needs_review_students,),
+                        args=(_needs_review_students, session),
                         key="bulk_review_btn",
                     )
             with bulk_col3:
@@ -1562,6 +1617,7 @@ with tab_review:
                                 q_score.score = q_score.ai_score
                                 s.recalculate_total()
                                 save_session(sess)
+                                st.session_state.session = sess
 
                             st.button(
                                 f"AIスコアに戻す ({qs.ai_score:.1f}点)",
@@ -1577,6 +1633,7 @@ with tab_review:
                             def _mark_reviewed(q_score, sess):
                                 q_score.reviewed = True
                                 save_session(sess)
+                                st.session_state.session = sess
 
                             st.button("確認済み", key=f"rev_{student.student_id}_{qs.question_id}",
                                       on_click=_mark_reviewed, args=(qs, session))
@@ -1591,10 +1648,12 @@ with tab_review:
                 def _confirm_student(s, sess):
                     s.status = "confirmed"
                     save_session(sess)
+                    st.session_state.session = sess
 
                 def _toggle_reference(s, sess):
                     s.is_reference = not s.is_reference
                     save_session(sess)
+                    st.session_state.session = sess
 
                 bcol1, bcol2, bcol3 = st.columns(3)
                 with bcol1:

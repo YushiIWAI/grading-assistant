@@ -1,4 +1,4 @@
-"""ローカルストレージ: 採点結果のJSON保存・読み込み・CSV出力"""
+"""ローカルストレージ: 採点結果のDB保存・読み込み・CSV出力"""
 
 from __future__ import annotations
 
@@ -8,52 +8,123 @@ import json
 from datetime import datetime
 from pathlib import Path
 
+import sqlalchemy as sa
+
+from db import get_engine, init_db, scoring_sessions
 from models import ScoringSession
 
-DATA_DIR = Path(__file__).parent / "data"
 OUTPUT_DIR = Path(__file__).parent / "output"
 
 
 def ensure_dirs():
     """必要なディレクトリを作成する"""
-    DATA_DIR.mkdir(exist_ok=True)
     OUTPUT_DIR.mkdir(exist_ok=True)
 
 
+def _ensure_table():
+    """テーブルが存在しなければ作成する"""
+    init_db()
+
+
 def save_session(session: ScoringSession) -> Path:
-    """採点セッションをJSONファイルに保存する"""
+    """採点セッションをDBに保存する"""
     ensure_dirs()
+    _ensure_table()
     session.updated_at = datetime.now().isoformat()
-    filename = f"session_{session.session_id}.json"
-    path = DATA_DIR / filename
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(session.to_dict(), f, ensure_ascii=False, indent=2)
-    return path
+    data = session.to_dict()
+
+    engine = get_engine()
+    with engine.begin() as conn:
+        # UPSERT: 存在チェック → insert or update
+        existing = conn.execute(
+            sa.select(scoring_sessions.c.session_id).where(
+                scoring_sessions.c.session_id == session.session_id
+            )
+        ).fetchone()
+
+        if existing:
+            conn.execute(
+                scoring_sessions.update()
+                .where(scoring_sessions.c.session_id == session.session_id)
+                .values(
+                    created_at=data["created_at"],
+                    updated_at=data["updated_at"],
+                    rubric_title=data["rubric_title"],
+                    pdf_filename=data["pdf_filename"],
+                    pages_per_student=data["pages_per_student"],
+                    grading_mode=data["grading_mode"],
+                    students=data["students"],
+                    ocr_results=data["ocr_results"],
+                )
+            )
+        else:
+            conn.execute(
+                scoring_sessions.insert().values(
+                    session_id=data["session_id"],
+                    created_at=data["created_at"],
+                    updated_at=data["updated_at"],
+                    rubric_title=data["rubric_title"],
+                    pdf_filename=data["pdf_filename"],
+                    pages_per_student=data["pages_per_student"],
+                    grading_mode=data["grading_mode"],
+                    students=data["students"],
+                    ocr_results=data["ocr_results"],
+                )
+            )
+
+    # 互換のため合成パスを返す（呼び出し側は使っていない）
+    return Path(f"db://session_{session.session_id}")
 
 
 def load_session(session_id: str) -> ScoringSession | None:
     """セッションIDからセッションを読み込む"""
-    path = DATA_DIR / f"session_{session_id}.json"
-    if not path.exists():
+    _ensure_table()
+    engine = get_engine()
+    with engine.connect() as conn:
+        row = conn.execute(
+            sa.select(scoring_sessions).where(
+                scoring_sessions.c.session_id == session_id
+            )
+        ).mappings().fetchone()
+
+    if row is None:
         return None
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
+
+    data = dict(row)
+    # JSON カラムが文字列の場合はパースする（SQLite の場合）
+    for col in ("students", "ocr_results"):
+        if isinstance(data[col], str):
+            data[col] = json.loads(data[col])
+
     return ScoringSession.from_dict(data)
 
 
 def list_sessions() -> list[dict]:
     """保存済みセッションの一覧を返す"""
-    ensure_dirs()
+    _ensure_table()
+    engine = get_engine()
+    with engine.connect() as conn:
+        rows = conn.execute(
+            sa.select(
+                scoring_sessions.c.session_id,
+                scoring_sessions.c.created_at,
+                scoring_sessions.c.rubric_title,
+                scoring_sessions.c.pdf_filename,
+                scoring_sessions.c.students,
+            ).order_by(scoring_sessions.c.created_at.desc())
+        ).mappings().all()
+
     sessions = []
-    for path in sorted(DATA_DIR.glob("session_*.json"), reverse=True):
-        with open(path, "r", encoding="utf-8") as f:
-            data = json.load(f)
+    for row in rows:
+        students = row["students"]
+        if isinstance(students, str):
+            students = json.loads(students)
         sessions.append({
-            "session_id": data.get("session_id", ""),
-            "created_at": data.get("created_at", ""),
-            "rubric_title": data.get("rubric_title", ""),
-            "pdf_filename": data.get("pdf_filename", ""),
-            "student_count": len(data.get("students", [])),
+            "session_id": row["session_id"],
+            "created_at": row["created_at"],
+            "rubric_title": row["rubric_title"],
+            "pdf_filename": row["pdf_filename"],
+            "student_count": len(students),
         })
     return sessions
 
@@ -109,3 +180,36 @@ def export_csv_file(session: ScoringSession) -> Path:
     with open(path, "w", encoding="utf-8-sig") as f:  # BOM付きUTF-8（Excel対応）
         f.write(csv_content)
     return path
+
+
+def migrate_json_to_db(data_dir: Path | None = None) -> list[str]:
+    """既存のJSONファイルをDBに移行する。移行済みファイルは .json.migrated にリネーム。
+
+    Returns:
+        移行したセッションIDのリスト
+    """
+    _ensure_table()
+    if data_dir is None:
+        data_dir = Path(__file__).parent / "data"
+
+    migrated = []
+    for path in sorted(data_dir.glob("session_*.json")):
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        session = ScoringSession.from_dict(data)
+        save_session(session)
+        path.rename(path.with_suffix(".json.migrated"))
+        migrated.append(session.session_id)
+
+    return migrated
+
+
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) > 1 and sys.argv[1] == "migrate-json":
+        ids = migrate_json_to_db()
+        print(f"移行完了: {len(ids)} セッション")
+        for sid in ids:
+            print(f"  - {sid}")
+    else:
+        print("使い方: python -m storage migrate-json")

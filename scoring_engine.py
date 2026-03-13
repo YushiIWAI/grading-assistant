@@ -22,7 +22,11 @@ from models import (
     OcrAnswer, Question, QuestionScore, Rubric,
     ScoringSession, StudentOcr, StudentResult,
 )
-from pdf_processor import image_to_base64
+from pdf_processor import (
+    PrivacyMaskConfig,
+    image_to_base64,
+    mask_images_for_external_ai,
+)
 
 
 # ============================================================
@@ -241,19 +245,18 @@ confidence の基準:
 
 needs_review の判定手順:
 採点コメントを書き終えた後、以下の自己チェックを行うこと:
-1. 各要素について、生徒が模範解答・本文と同じキーワードを使っているか、独自の言い換えをしているかを確認する
-2. 一つでも独自の言い換え・日常語への読み替えがある要素があれば → needs_review = true
-   ただし例外: 得点が配点の25%以下で、含まれている要素も表面的・抽象的な言及のみの場合は、教員判断が分かれる余地が小さいため needs_review = false でよい
-3. 上記に該当しなくても、以下のいずれかに該当すれば → needs_review = true:
-   - 採点基準の要素が暗示的・間接的にしか含まれず、該当/非該当の判断が分かれうる
-   - 配点の40〜60%付近のボーダーケース
-   - コメントの内容と得点の整合性に迷いがある
 
-needs_review = false とするのは以下のすべてを満たす場合のみ:
-- 採点基準の全要素について、模範解答・本文のキーワードをそのまま使って書かれている（独自の言い換えがない）
-- かつ、要素の該当/非該当が一義的に明確である
-- または、明らかに的外れ・白紙・極端に内容不足で低得点が確実な場合
-- または、漢字・選択問題の正誤判定
+needs_review = true とするのは以下のいずれかに該当する場合のみ:
+1. 採点基準の要素が暗示的・間接的にしか含まれず、該当/非該当の判断が教員によって大きく分かれうる場合（微妙な言い換えではなく、本質的に解釈が割れるケース）
+2. コメントの内容と得点の整合性に明らかな迷いがある場合
+3. 的外れに見えるが部分点付与の余地が残る場合
+
+needs_review = false とするのは以下のいずれかに該当する場合:
+- 漢字・選択問題の正誤判定
+- 明らかに的外れ・白紙・極端に内容不足で低得点が確実な場合
+- 各要素の該当/非該当が明確に判断できた場合（独自の言い換えがあっても、概念として同じであることに確信があれば false でよい）
+- 満点の場合で、全要素が明確に含まれていると判断できた場合（満点だからといって自動的にフラグしない）
+- ボーダーケースであっても、採点基準の部分点の目安に照らして得点の妥当性に確信が持てる場合
 
 review_reason（needs_review が true の場合は必須）:
 - needs_review を true にした場合、review_reason に「何について教員判断が必要か」を具体的に書いてください
@@ -423,16 +426,23 @@ def _api_call_with_retry(api_fn, max_retries: int = 2, delay: float = 2.0):
 # Phase 1: OCR（読み取り専用）
 # ============================================================
 
-def build_ocr_prompt(rubric: Rubric) -> str:
-    """OCR用プロンプト: 画像から氏名と各問の解答テキストだけ抽出する"""
+def build_ocr_prompt(
+    rubric: Rubric,
+    include_student_name: bool = True,
+) -> str:
+    """OCR用プロンプト: 画像から各問の解答テキストを抽出する。"""
     lines = [
         f"# 試験: {rubric.title}",
         "",
-        "以下の答案画像から、学生の氏名と各問の解答テキストを読み取ってください。",
+        "以下の答案画像から、各問の解答テキストを読み取ってください。",
         "採点は不要です。テキストの読み取りのみ行ってください。",
         "",
         "# 読み取る設問一覧",
     ]
+    if include_student_name:
+        lines.insert(3, "学生の氏名も読み取ってください。")
+    else:
+        lines.insert(3, "答案上部の氏名欄はマスキング済みです。student_name は必ず空文字を返してください。")
     # 設問タイプの日本語表記
     TYPE_HINTS = {
         "short_answer": "短答（語句・漢字の読みなど短い回答）",
@@ -459,6 +469,11 @@ def build_ocr_prompt(rubric: Rubric) -> str:
         f'{{"question_id": "{aid}", "transcribed_text": "...", "confidence": "high"}}'
         for aid in all_ids[:3]
     )
+    student_name_line = (
+        '  "student_name": "読み取れた氏名（不明なら空文字）",'
+        if include_student_name
+        else '  "student_name": "",'
+    )
     lines.extend([
         "",
         "# 回答形式",
@@ -467,7 +482,7 @@ def build_ocr_prompt(rubric: Rubric) -> str:
         "",
         "```json",
         "{",
-        '  "student_name": "読み取れた氏名（不明なら空文字）",',
+        student_name_line,
         '  "answers": [',
         f"    {example_answers}",
         '  ]',
@@ -537,17 +552,25 @@ def build_layout_analysis_prompt(rubric: Rubric) -> str:
     return "\n".join(lines)
 
 
-def build_ocr_prompt_with_layout(rubric: Rubric, layout: dict) -> str:
+def build_ocr_prompt_with_layout(
+    rubric: Rubric,
+    layout: dict,
+    include_student_name: bool = True,
+) -> str:
     """空間プロンプト付きOCR用プロンプト: レイアウト分析結果を踏まえて読み取る（Phase 1-2）"""
     lines = [
         f"# 試験: {rubric.title}",
         "",
-        "以下の答案画像から、学生の氏名と各問の解答テキストを読み取ってください。",
+        "以下の答案画像から、各問の解答テキストを読み取ってください。",
         "採点は不要です。テキストの読み取りのみ行ってください。",
         "",
         "# レイアウト情報（事前分析済み）",
         f"全体構造: {layout.get('overall_structure', '不明')}",
     ]
+    if include_student_name:
+        lines.insert(3, "学生の氏名も読み取ってください。")
+    else:
+        lines.insert(3, "答案上部の氏名欄はマスキング済みです。student_name は必ず空文字を返してください。")
 
     # ページごとのレイアウト情報を空間プロンプトとして提示
     for page_info in layout.get("pages", []):
@@ -591,6 +614,11 @@ def build_ocr_prompt_with_layout(rubric: Rubric, layout: dict) -> str:
         f'{{"question_id": "{aid}", "transcribed_text": "...", "confidence": "high"}}'
         for aid in all_ids[:3]
     )
+    student_name_line = (
+        '  "student_name": "読み取れた氏名（不明なら空文字）",'
+        if include_student_name
+        else '  "student_name": "",'
+    )
     lines.extend([
         "",
         "# 回答形式",
@@ -599,7 +627,7 @@ def build_ocr_prompt_with_layout(rubric: Rubric, layout: dict) -> str:
         "",
         "```json",
         "{",
-        '  "student_name": "読み取れた氏名（不明なら空文字）",',
+        student_name_line,
         '  "answers": [',
         f"    {example_answers}",
         '  ]',
@@ -780,6 +808,112 @@ def build_rubric_review_prompt(rubric: Rubric) -> str:
         f"上記の記述式{descriptive_count}問について、採点時に判断が分かれそうなポイントを分析してください。",
         "各設問について1〜3個の質問を生成してください。",
         "質問には必ず「こういう解答があった場合」という具体的なサンプル解答を添えてください。",
+    ])
+
+    return "\n".join(lines)
+
+
+# --- 答案駆動型の採点基準精緻化 ---
+
+RUBRIC_REFINE_SYSTEM_PROMPT = """\
+あなたは国語の採点基準精緻化AIです。
+実際の学生の解答を読み、採点時に判断が分かれそうな具体的なケースを抽出し、
+教員に確認すべきポイントを質問として提示します。
+
+目的:
+- 実際の答案に基づいて、採点基準の曖昧な点を事前に解消する
+- 「こういう言い回しの解答をどう扱うか」を教員と事前にすり合わせる
+- 採点のブレを最小化する
+
+手順:
+1. まず全学生の解答を通読し、解答のバリエーションを把握する
+2. 模範解答と比較して「合っているとも外れているとも言いにくい」ボーダーラインの解答を特定する
+3. そのボーダーラインケースを具体的に引用しつつ、教員に判断を仰ぐ質問を作成する
+
+質問の観点:
+1. 言い換え許容: 模範解答のキーワードを使わず同じ概念を表現している場合
+2. 部分的正答: 複数の要素のうち一部のみ正しい場合
+3. 独自の解釈: 模範解答とは異なるが一理ある解釈の場合
+4. 表現の質: 概念は合っているが表現が曖昧・冗長な場合
+5. 想定外の論点: 採点基準にない視点だが的確な指摘の場合
+
+重要:
+- 質問は必ず**実際の学生の解答を引用**して作成すること
+- 抽象的な質問は不要。「この解答は○点ですか？」のような具体的な質問にすること
+- 短答問題（漢字の読み等）は対象外。記述式の設問のみ分析すること
+
+回答形式:
+以下のJSON形式で回答してください。JSONのみを出力してください。
+
+```json
+{
+  "questions": [
+    {
+      "question_id": "対象の設問ID",
+      "aspect": "質問の観点（上記1-5のいずれか）",
+      "student_answer": "実際の学生の解答（引用）",
+      "student_id": "解答した学生のID",
+      "question": "教員への具体的な質問",
+      "options": ["選択肢A", "選択肢B", "選択肢C"]
+    }
+  ]
+}
+```
+"""
+
+
+def build_rubric_refine_prompt(
+    rubric: Rubric,
+    ocr_answers_by_question: dict[str, list[tuple[str, str]]],
+) -> str:
+    """答案駆動型の採点基準精緻化プロンプトを構築する。
+
+    Args:
+        rubric: 採点基準
+        ocr_answers_by_question: {question_id: [(student_id, transcribed_text), ...]}
+            記述式設問のOCR結果のみを渡すこと
+    """
+    lines = [
+        f"# 試験: {rubric.title}",
+        f"満点: {rubric.total_points}点",
+        "",
+    ]
+
+    if rubric.notes:
+        lines.append(f"## 採点上の注意\n{rubric.notes}\n")
+
+    descriptive_count = 0
+    for q in rubric.questions:
+        if q.question_type != "descriptive":
+            continue
+        qid = str(q.id)
+        answers = ocr_answers_by_question.get(qid, [])
+        if not answers:
+            continue
+        descriptive_count += 1
+
+        lines.append(f"\n## 問{q.id}: {q.description}")
+        lines.append(f"- 配点: {q.max_points}点")
+        if q.model_answer:
+            lines.append(f"- 模範解答: {q.model_answer}")
+        if q.scoring_criteria:
+            lines.append(f"- 採点基準:\n{q.scoring_criteria}")
+
+        lines.append(f"\n### 実際の学生の解答（{len(answers)}名分）")
+        for sid, text in answers:
+            display_text = text.strip() if text.strip() else "（空白）"
+            lines.append(f"- [{sid}] {display_text}")
+
+    if descriptive_count == 0:
+        return ""
+
+    lines.extend([
+        "",
+        "## 指示",
+        f"上記の記述式{descriptive_count}問について、実際の学生の解答を読み、",
+        "採点時に判断が分かれそうなケースを具体的に指摘してください。",
+        "各設問について1〜3個の質問を生成してください。",
+        "質問には必ず実際の学生の解答を引用してください。",
     ])
 
     return "\n".join(lines)
@@ -1800,6 +1934,18 @@ def analyze_batch_calibration(
 class ScoringProvider(ABC):
     """採点プロバイダーの基底クラス"""
 
+    def __init__(self, privacy_mask: PrivacyMaskConfig | None = None):
+        self.privacy_mask = privacy_mask or PrivacyMaskConfig()
+
+    def _prepare_images_for_external_ai(
+        self,
+        images: list[Image.Image],
+    ) -> list[Image.Image]:
+        return mask_images_for_external_ai(images, self.privacy_mask)
+
+    def _student_name_visible_to_model(self) -> bool:
+        return not self.privacy_mask.enabled
+
     @abstractmethod
     def score_student(
         self,
@@ -1903,9 +2049,15 @@ class GeminiProvider(ScoringProvider):
 
     TIMEOUT = 120  # seconds
 
-    def __init__(self, api_key: str, model_name: str = "gemini-3.1-pro-preview"):
+    def __init__(
+        self,
+        api_key: str,
+        model_name: str = "gemini-3.1-pro-preview",
+        privacy_mask: PrivacyMaskConfig | None = None,
+    ):
         from google import genai
         from google.genai import types as _types
+        super().__init__(privacy_mask=privacy_mask)
         self.client = genai.Client(api_key=api_key)
         self.model_name = model_name
         self._rate_limiter = RateLimiter(max_calls=14, window_seconds=60.0)
@@ -1942,11 +2094,12 @@ class GeminiProvider(ScoringProvider):
         from google.genai import types
 
         prompt = SCORING_SYSTEM_PROMPT + "\n\n" + build_scoring_prompt(rubric, reference_students)
+        prepared_images = self._prepare_images_for_external_ai(images)
 
         contents = []
-        for i, img in enumerate(images):
+        for i, img in enumerate(prepared_images):
             contents.append(img)
-            if len(images) > 1:
+            if len(prepared_images) > 1:
                 contents.append(f"（上記は答案の{i + 1}ページ目です）")
         contents.append(prompt)
 
@@ -1985,16 +2138,19 @@ class GeminiProvider(ScoringProvider):
             SCORING_SYSTEM_PROMPT + "\n\n"
             + build_single_question_prompt(
                 question=question, rubric_title=rubric_title,
-                extract_student_name=extract_student_name,
+                extract_student_name=(
+                    extract_student_name and self._student_name_visible_to_model()
+                ),
                 reference_students_info=reference_students_info,
                 notes=notes,
             )
         )
+        prepared_images = self._prepare_images_for_external_ai(images)
 
         contents = []
-        for i, img in enumerate(images):
+        for i, img in enumerate(prepared_images):
             contents.append(img)
-            if len(images) > 1:
+            if len(prepared_images) > 1:
                 contents.append(f"（上記は答案の{i + 1}ページ目です）")
         contents.append(prompt)
 
@@ -2024,11 +2180,12 @@ class GeminiProvider(ScoringProvider):
         from google.genai import types
 
         prompt = LAYOUT_ANALYSIS_SYSTEM_PROMPT + "\n\n" + build_layout_analysis_prompt(rubric)
+        prepared_images = self._prepare_images_for_external_ai(images)
 
         contents = []
-        for i, img in enumerate(images):
+        for i, img in enumerate(prepared_images):
             contents.append(img)
-            if len(images) > 1:
+            if len(prepared_images) > 1:
                 contents.append(f"（上記は答案の{i + 1}ページ目です）")
         contents.append(prompt)
 
@@ -2057,14 +2214,22 @@ class GeminiProvider(ScoringProvider):
         from google.genai import types
 
         if layout:
-            prompt = OCR_SYSTEM_PROMPT + "\n\n" + build_ocr_prompt_with_layout(rubric, layout)
+            prompt = OCR_SYSTEM_PROMPT + "\n\n" + build_ocr_prompt_with_layout(
+                rubric,
+                layout,
+                include_student_name=self._student_name_visible_to_model(),
+            )
         else:
-            prompt = OCR_SYSTEM_PROMPT + "\n\n" + build_ocr_prompt(rubric)
+            prompt = OCR_SYSTEM_PROMPT + "\n\n" + build_ocr_prompt(
+                rubric,
+                include_student_name=self._student_name_visible_to_model(),
+            )
+        prepared_images = self._prepare_images_for_external_ai(images)
 
         contents = []
-        for i, img in enumerate(images):
+        for i, img in enumerate(prepared_images):
             contents.append(img)
-            if len(images) > 1:
+            if len(prepared_images) > 1:
                 contents.append(f"（上記は答案の{i + 1}ページ目です）")
         contents.append(prompt)
 
@@ -2167,20 +2332,53 @@ class GeminiProvider(ScoringProvider):
 
     def review_rubric(self, rubric: Rubric) -> dict:
         """採点基準をレビューし、曖昧な点への質問リストを生成する。"""
+        from google.genai import types
+
         prompt_text = build_rubric_review_prompt(rubric)
         if not prompt_text:
             return {"questions": []}
 
         def _call():
             self._rate_limiter.wait()
-            response = self._client.models.generate_content(
-                model=self._model_id,
-                contents=prompt_text,
-                config=types.GenerateContentConfig(
-                    system_instruction=RUBRIC_REVIEW_SYSTEM_PROMPT,
-                    temperature=0.3,
-                    safety_settings=self._safety_settings,
-                ),
+            response = self._call_with_timeout(
+                lambda: self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt_text,
+                    config=types.GenerateContentConfig(
+                        system_instruction=RUBRIC_REVIEW_SYSTEM_PROMPT,
+                        temperature=0.3,
+                        safety_settings=self._safety_settings,
+                    ),
+                )
+            )
+            return _gemini_extract_text(response)
+
+        return _api_call_with_retry(_call)
+
+    def refine_rubric(
+        self,
+        rubric: Rubric,
+        ocr_answers_by_question: dict[str, list[tuple[str, str]]],
+    ) -> dict:
+        """実際の答案を基に採点基準の精緻化質問を生成する。"""
+        from google.genai import types
+
+        prompt_text = build_rubric_refine_prompt(rubric, ocr_answers_by_question)
+        if not prompt_text:
+            return {"questions": []}
+
+        def _call():
+            self._rate_limiter.wait()
+            response = self._call_with_timeout(
+                lambda: self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=prompt_text,
+                    config=types.GenerateContentConfig(
+                        system_instruction=RUBRIC_REFINE_SYSTEM_PROMPT,
+                        temperature=0.3,
+                        safety_settings=self._safety_settings,
+                    ),
+                )
             )
             return _gemini_extract_text(response)
 
@@ -2213,8 +2411,14 @@ class AnthropicProvider(ScoringProvider):
         "claude-haiku-4-20250414": "Claude Haiku 4.5（高速・低コスト）",
     }
 
-    def __init__(self, api_key: str, model_name: str = "claude-sonnet-4-20250514"):
+    def __init__(
+        self,
+        api_key: str,
+        model_name: str = "claude-sonnet-4-20250514",
+        privacy_mask: PrivacyMaskConfig | None = None,
+    ):
         import anthropic
+        super().__init__(privacy_mask=privacy_mask)
         self.client = anthropic.Anthropic(
             api_key=api_key,
             timeout=120.0,
@@ -2233,9 +2437,10 @@ class AnthropicProvider(ScoringProvider):
         reference_students: list[StudentResult] | None = None,
     ) -> dict:
         scoring_prompt = build_scoring_prompt(rubric, reference_students)
+        prepared_images = self._prepare_images_for_external_ai(images)
 
         content = []
-        for i, img in enumerate(images):
+        for i, img in enumerate(prepared_images):
             b64 = image_to_base64(img)
             content.append({
                 "type": "image",
@@ -2245,7 +2450,7 @@ class AnthropicProvider(ScoringProvider):
                     "data": b64,
                 },
             })
-            if len(images) > 1:
+            if len(prepared_images) > 1:
                 content.append({
                     "type": "text",
                     "text": f"（上記は答案の{i + 1}ページ目です）",
@@ -2277,19 +2482,22 @@ class AnthropicProvider(ScoringProvider):
     ) -> dict:
         scoring_prompt = build_single_question_prompt(
             question=question, rubric_title=rubric_title,
-            extract_student_name=extract_student_name,
+            extract_student_name=(
+                extract_student_name and self._student_name_visible_to_model()
+            ),
             reference_students_info=reference_students_info,
             notes=notes,
         )
+        prepared_images = self._prepare_images_for_external_ai(images)
 
         content = []
-        for i, img in enumerate(images):
+        for i, img in enumerate(prepared_images):
             b64 = image_to_base64(img)
             content.append({
                 "type": "image",
                 "source": {"type": "base64", "media_type": "image/png", "data": b64},
             })
-            if len(images) > 1:
+            if len(prepared_images) > 1:
                 content.append({"type": "text", "text": f"（上記は答案の{i + 1}ページ目です）"})
         content.append({"type": "text", "text": scoring_prompt})
 
@@ -2308,15 +2516,16 @@ class AnthropicProvider(ScoringProvider):
 
     def analyze_layout(self, images, rubric):
         prompt = build_layout_analysis_prompt(rubric)
+        prepared_images = self._prepare_images_for_external_ai(images)
 
         content = []
-        for i, img in enumerate(images):
+        for i, img in enumerate(prepared_images):
             b64 = image_to_base64(img)
             content.append({
                 "type": "image",
                 "source": {"type": "base64", "media_type": "image/png", "data": b64},
             })
-            if len(images) > 1:
+            if len(prepared_images) > 1:
                 content.append({"type": "text", "text": f"（上記は答案の{i + 1}ページ目です）"})
         content.append({"type": "text", "text": prompt})
 
@@ -2336,18 +2545,26 @@ class AnthropicProvider(ScoringProvider):
 
     def ocr_student(self, images, rubric, layout=None):
         if layout:
-            prompt = build_ocr_prompt_with_layout(rubric, layout)
+            prompt = build_ocr_prompt_with_layout(
+                rubric,
+                layout,
+                include_student_name=self._student_name_visible_to_model(),
+            )
         else:
-            prompt = build_ocr_prompt(rubric)
+            prompt = build_ocr_prompt(
+                rubric,
+                include_student_name=self._student_name_visible_to_model(),
+            )
+        prepared_images = self._prepare_images_for_external_ai(images)
 
         content = []
-        for i, img in enumerate(images):
+        for i, img in enumerate(prepared_images):
             b64 = image_to_base64(img)
             content.append({
                 "type": "image",
                 "source": {"type": "base64", "media_type": "image/png", "data": b64},
             })
-            if len(images) > 1:
+            if len(prepared_images) > 1:
                 content.append({"type": "text", "text": f"（上記は答案の{i + 1}ページ目です）"})
         content.append({"type": "text", "text": prompt})
 
@@ -2431,6 +2648,29 @@ class AnthropicProvider(ScoringProvider):
 
         return _api_call_with_retry(_call)
 
+    def refine_rubric(
+        self,
+        rubric: Rubric,
+        ocr_answers_by_question: dict[str, list[tuple[str, str]]],
+    ) -> dict:
+        """実際の答案を基に採点基準の精緻化質問を生成する。"""
+        prompt_text = build_rubric_refine_prompt(rubric, ocr_answers_by_question)
+        if not prompt_text:
+            return {"questions": []}
+
+        def _call():
+            self._rate_limiter.wait()
+            response = self._client.messages.create(
+                model=self.model_name,
+                max_tokens=4096,
+                temperature=0.3,
+                system=RUBRIC_REFINE_SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": [{"type": "text", "text": prompt_text}]}],
+            )
+            return response.content[0].text
+
+        return _api_call_with_retry(_call)
+
 
 # ============================================================
 # デモプロバイダー
@@ -2438,6 +2678,9 @@ class AnthropicProvider(ScoringProvider):
 
 class DemoProvider(ScoringProvider):
     """APIキーなしでUIを確認するためのデモプロバイダー"""
+
+    def __init__(self, privacy_mask: PrivacyMaskConfig | None = None):
+        super().__init__(privacy_mask=privacy_mask)
 
     @property
     def name(self) -> str:
@@ -2488,6 +2731,33 @@ class DemoProvider(ScoringProvider):
                     "question": f"問{q.id}で、本文のキーワードを使わず概念だけ合っている場合、部分点をどの程度与えますか？",
                     "options": ["キーワード不使用は大幅減点", "概念が合っていれば半分程度の部分点", "概念が正確なら減点なし"],
                 })
+        return {"questions": questions}
+
+    def refine_rubric(
+        self,
+        rubric: Rubric,
+        ocr_answers_by_question: dict[str, list[tuple[str, str]]],
+    ) -> dict:
+        """デモ用の答案駆動型精緻化結果"""
+        questions = []
+        for q in rubric.questions:
+            if q.question_type != "descriptive":
+                continue
+            qid = str(q.id)
+            answers = ocr_answers_by_question.get(qid, [])
+            if not answers:
+                continue
+            # 最初の学生の解答を引用してデモ質問を生成
+            sid, text = answers[0]
+            display_text = text.strip() if text.strip() else "テスト解答"
+            questions.append({
+                "question_id": qid,
+                "aspect": "言い換え許容",
+                "student_answer": display_text,
+                "student_id": sid,
+                "question": f"問{q.id}で、[{sid}]の「{display_text}」という解答は、模範解答と同等と見なしますか？",
+                "options": ["同等（満点）", "部分的に正しい（部分点）", "不十分（0点）"],
+            })
         return {"questions": questions}
 
 

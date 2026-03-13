@@ -9,20 +9,8 @@ from models import ScoringSession
 import storage
 
 
-@pytest.fixture
-def tmp_data_dir(tmp_path, monkeypatch):
-    """DATA_DIR と OUTPUT_DIR を一時ディレクトリに切り替える"""
-    data_dir = tmp_path / "data"
-    output_dir = tmp_path / "output"
-    data_dir.mkdir()
-    output_dir.mkdir()
-    monkeypatch.setattr(storage, "DATA_DIR", data_dir)
-    monkeypatch.setattr(storage, "OUTPUT_DIR", output_dir)
-    return data_dir
-
-
 class TestSaveAndLoad:
-    def test_round_trip(self, sample_session, tmp_data_dir):
+    def test_round_trip(self, sample_session, test_db):
         storage.save_session(sample_session)
         loaded = storage.load_session(sample_session.session_id)
 
@@ -31,13 +19,13 @@ class TestSaveAndLoad:
         assert len(loaded.students) == 2
         assert loaded.students[0].total_score == sample_session.students[0].total_score
 
-    def test_load_nonexistent(self, tmp_data_dir):
+    def test_load_nonexistent(self, test_db):
         result = storage.load_session("nonexistent_id")
         assert result is None
 
 
 class TestListSessions:
-    def test_list_multiple(self, sample_session, tmp_data_dir):
+    def test_list_multiple(self, sample_session, test_db):
         storage.save_session(sample_session)
 
         session2 = ScoringSession(session_id="second", rubric_title="Test 2")
