@@ -1,0 +1,743 @@
+{
+  "exam_id": "todai_gendaibun",
+  "exam_title": "現代文（東大型模擬試験）",
+  "provider_name": "Gemini (gemini-2.5-flash)",
+  "total_cases": 38,
+  "passed_cases": 35,
+  "pass_rate": 92.1,
+  "elapsed_seconds": 102.1,
+  "errors": [],
+  "results": [
+    {
+      "case_id": "q1a_correct",
+      "question_id": "1-a",
+      "expected_score": 2,
+      "actual_score": 2.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "full",
+      "tags": [
+        "student_level:all"
+      ],
+      "ai_comment": "「本質」と正確に書けているため満点。",
+      "rationale": "正答",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": ""
+    },
+    {
+      "case_id": "q1a_wrong_similar",
+      "question_id": "1-a",
+      "expected_score": 0,
+      "actual_score": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "zero",
+      "tags": [
+        "error_type:factual_error",
+        "student_level:struggling"
+      ],
+      "ai_comment": "「質」を「室」と誤って書いているため0点。",
+      "rationale": "似た漢字の混同。「質」→「室」",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": ""
+    },
+    {
+      "case_id": "q1a_blank",
+      "question_id": "1-a",
+      "expected_score": 0,
+      "actual_score": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "zero",
+      "tags": [
+        "student_level:minimal"
+      ],
+      "ai_comment": "空欄のため0点。",
+      "rationale": "空欄",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": ""
+    },
+    {
+      "case_id": "q1b_correct",
+      "question_id": "1-b",
+      "expected_score": 2,
+      "actual_score": 2.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "full",
+      "tags": [
+        "student_level:all"
+      ],
+      "ai_comment": "正答「受容」と正確に書けているため満点。",
+      "rationale": "正答",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q1b_wrong_homophone",
+      "question_id": "1-b",
+      "expected_score": 0,
+      "actual_score": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "zero",
+      "tags": [
+        "error_type:factual_error",
+        "student_level:struggling"
+      ],
+      "ai_comment": "「需要」は同音異義語であり、設問の意図する「受容」とは異なるため0点。",
+      "rationale": "同音異義語の混同。「受容」→「需要」",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q1b_wrong_partial",
+      "question_id": "1-b",
+      "expected_score": 0,
+      "actual_score": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "zero",
+      "tags": [
+        "error_type:factual_error",
+        "student_level:struggling"
+      ],
+      "ai_comment": "「受用」は誤字であり、正答「受容」とは異なるため0点。",
+      "rationale": "一文字正解だが漢字書き取りは部分点なし",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q1c_correct",
+      "question_id": "1-c",
+      "expected_score": 2,
+      "actual_score": 2.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "full",
+      "tags": [
+        "student_level:all"
+      ],
+      "ai_comment": "正答「変容」と一致。正確な字形。",
+      "rationale": "正答",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": ""
+    },
+    {
+      "case_id": "q1c_wrong",
+      "question_id": "1-c",
+      "expected_score": 0,
+      "actual_score": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "zero",
+      "tags": [
+        "error_type:factual_error",
+        "student_level:struggling"
+      ],
+      "ai_comment": "「用」が誤字。正答は「変容」。",
+      "rationale": "「容」→「用」の混同",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": ""
+    },
+    {
+      "case_id": "q1c_wrong_henyou",
+      "question_id": "1-c",
+      "expected_score": 0,
+      "actual_score": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "zero",
+      "tags": [
+        "error_type:factual_error",
+        "student_level:struggling"
+      ],
+      "ai_comment": "「編」が誤字。正答は「変容」。",
+      "rationale": "「変」→「編」の混同。音が近い漢字",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": ""
+    },
+    {
+      "case_id": "q2_full",
+      "question_id": "2",
+      "expected_score": 14,
+      "actual_score": 14.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "full",
+      "tags": [
+        "student_level:advanced"
+      ],
+      "ai_comment": "模範解答とほぼ同内容で、採点基準の全要素を正確に満たしています。\n【要素A: 4点】「相手の発言を自分の既有の理解に当てはめて処理することではなく」\n【要素B: 5点】「自己の認識の前提そのものが問い直される経験」\n【要素C: 3点】「相手の言葉のなかに自分の予期を超えた意味を見出すことで」\n【表現: 2点】文末「〜ということ。」で結び、論理的に一文で構成。",
+      "rationale": "模範解答とほぼ同等。全要素を正確に含む",
+      "expected_needs_review": true,
+      "actual_needs_review": true,
+      "review_reason": "模範解答とほぼ同内容で満点としたが、教員による最終確認をお願いします。"
+    },
+    {
+      "case_id": "q2_high_partial_1",
+      "question_id": "2",
+      "expected_score": 6,
+      "actual_score": 6.0,
+      "tolerance": 2,
+      "passed": true,
+      "score_level": "high_partial",
+      "tags": [
+        "boundary:upper",
+        "error_type:surface_reword",
+        "student_level:mid"
+      ],
+      "ai_comment": "要素AとBは概念の方向性は合っているものの、本文のキーワードや概念を正確に踏まえた表現ではなく、日常語レベルの言い換えに留まっています。要素Cへの言及はありません。\n【要素A: 2点】「相手の言葉をそのまま受け入れることではなく」（日常語レベルの言い換え）\n【要素B: 2点】「自分自身の考え方や物の見方が変化するような体験」（日常語レベルの言い換え）\n【要素C: 0点】言及なし\n【表現: 2点】文末「〜ということ。」で結び、論理的に一文で構成。",
+      "rationale": "Bの方向性は合っているが「了解の枠組み」の概念が不正確。「そのまま受け入れる」はAの言い換えとしてやや不十分。Cへの言及なし",
+      "expected_needs_review": true,
+      "actual_needs_review": true,
+      "review_reason": "要素A「了解の枠内に回収する」の否定を「そのまま受け入れる」と、要素B「枠組みが揺さぶられる」を「考え方や物の見方が変化する」と日常語で言い換えている。概念は近いが本文のキーワードを踏まえていないため、それぞれ2点とした。この部分点の妥当性について教員判断をお願いします。"
+    },
+    {
+      "case_id": "q2_high_partial_2",
+      "question_id": "2",
+      "expected_score": 12,
+      "actual_score": 14.0,
+      "tolerance": 1,
+      "passed": false,
+      "score_level": "high_partial",
+      "tags": [
+        "student_level:advanced",
+        "azabu:true"
+      ],
+      "ai_comment": "採点基準の全要素を正確に満たしており、模範解答に近い質の高い解答です。\n【要素A: 4点】「相手の話を自分の知識や経験の範囲内で解釈するのではなく」\n【要素B: 5点】「自己の理解の枠組みが根本から揺らぐ体験」\n【要素C: 3点】「自分がこれまで持っていなかった視点に出会い」\n【表現: 2点】文末「〜ということ。」で結び、論理的に一文で構成。",
+      "rationale": "全要素を含むが、Aの「了解の枠内に回収する」の言い換えがやや自由。概念の精度はあるが本文のキーワードの踏まえ方がやや弱い",
+      "expected_needs_review": true,
+      "actual_needs_review": true,
+      "review_reason": "採点基準の全要素を正確に満たしており、満点としたが、教員による最終確認をお願いします。"
+    },
+    {
+      "case_id": "q2_high_partial_independent",
+      "question_id": "2",
+      "expected_score": 13,
+      "actual_score": 13.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "high_partial",
+      "tags": [
+        "student_level:advanced",
+        "azabu:true",
+        "boundary:upper"
+      ],
+      "ai_comment": "要素AとBは正確に捉えられています。要素Cは直接的な言及ではないものの、「認識の地平が開かれ」という形で間接的に示されています。\n【要素A: 4点】「自分の理解の枠内に相手の言葉を位置づけることではなく」\n【要素B: 5点】「自分の認識の地平が開かれ、これまでの前提が更新される契機となる経験」\n【要素C: 2点】「自分の認識の地平が開かれ」（予期を超えた意味に間接的に触れている）\n【表現: 2点】文末「〜ということ。」で結び、論理的に一文で構成。",
+      "rationale": "模範解答と異なる言い回しだが概念は正確。「認識の地平が開かれ」は独自表現だが本文の趣旨に合致。高得点だが満点には微妙",
+      "expected_needs_review": true,
+      "actual_needs_review": true,
+      "review_reason": "要素C「予期を超えた意味」について直接的な言及はないが、「自分の認識の地平が開かれ」という表現がその結果として間接的に示していると判断し、部分点2点とした。この判断の妥当性について教員判断をお願いします。"
+    },
+    {
+      "case_id": "q2_low_partial_1",
+      "question_id": "2",
+      "expected_score": 5,
+      "actual_score": 7.0,
+      "tolerance": 2,
+      "passed": true,
+      "score_level": "low_partial",
+      "tags": [
+        "error_type:surface_reword",
+        "student_level:mid",
+        "boundary:lower"
+      ],
+      "ai_comment": "全ての要素において、概念の方向性は合っているものの、本文のキーワードや概念を正確に踏まえた表現ではなく、日常語レベルの表面的な言い換えに留まっています。\n【要素A: 2点】「自分の知っていることだけで判断するのではなく」（日常語レベルの言い換え）\n【要素B: 2点】「新しい考えに触れることで自分の考えが変わる」（日常語レベルの言い換え）\n【要素C: 1点】「新しい考えに触れる」（予期を超えた意味に間接的に触れているが、表現が弱い）\n【表現: 2点】文末「〜ということ。」で結び、論理的に一文で構成。",
+      "rationale": "方向性は合っているが全体的に日常語レベル。「了解の枠組み」「認識の前提」等の概念がすべて平易に読み替えられている",
+      "expected_needs_review": true,
+      "actual_needs_review": true,
+      "review_reason": "各要素が日常語レベルの表面的な言い換えに留まっているため、それぞれ部分点（A:2点, B:2点, C:1点）とした。この部分点の妥当性について教員判断をお願いします。"
+    },
+    {
+      "case_id": "q2_low_partial_2",
+      "question_id": "2",
+      "expected_score": 1,
+      "actual_score": 0.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "low_partial",
+      "tags": [
+        "error_type:surface_reword",
+        "student_level:struggling"
+      ],
+      "ai_comment": "設問の意図から完全に外れ、本文の概念とは異なる一般論に読み替えています。形式は守られていますが、内容が的外れなため加点しません。",
+      "rationale": "「コミュニケーション論」への読み替え。本文の哲学的論点（認識の変容）ではなく、一般的な「傾聴」の話にしてしまっている",
+      "expected_needs_review": true,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q2_off_topic",
+      "question_id": "2",
+      "expected_score": 0,
+      "actual_score": 0.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "off_topic",
+      "tags": [
+        "error_type:off_topic",
+        "student_level:struggling"
+      ],
+      "ai_comment": "設問の意図から完全に外れ、本文の概念とは異なる一般論に読み替えています。形式は守られていますが、内容が的外れなため加点しません。",
+      "rationale": "本文の趣旨と無関係な一般論。「自分の意見を持つ」は本文の主張と逆方向",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q2_zero_short",
+      "question_id": "2",
+      "expected_score": 1,
+      "actual_score": 0.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "zero",
+      "tags": [
+        "error_type:surface_reword",
+        "student_level:minimal"
+      ],
+      "ai_comment": "設問の意図から完全に外れ、本文の概念を全く説明できていません。形式は守られていますが、内容が的外れなため加点しません。",
+      "rationale": "字数極端に不足、内容も一般論レベル",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q2_zero_blank",
+      "question_id": "2",
+      "expected_score": 0,
+      "actual_score": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "zero",
+      "tags": [
+        "student_level:minimal"
+      ],
+      "ai_comment": "空欄のため0点。",
+      "rationale": "白紙",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q3_full",
+      "question_id": "3",
+      "expected_score": 10,
+      "actual_score": 10.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "full",
+      "tags": [
+        "student_level:advanced"
+      ],
+      "ai_comment": "模範解答とほぼ同内容で、採点基準の全要素を正確に満たしています。\n【要素A: 4点】「わからなさ」にとどまっている状態、安易にわかったつもりにならず\n【要素B: 3点】他者の他者性を損なわずに向き合う\n【要素C: 2点】対話の核心的な態度\n【表現: 1点】文末「〜から。」",
+      "rationale": "全要素を正確に含む模範的解答",
+      "expected_needs_review": true,
+      "actual_needs_review": true,
+      "review_reason": "模範解答とほぼ同内容で、採点基準の全要素を満たし満点としました。教員による最終確認をお願いします。"
+    },
+    {
+      "case_id": "q3_high_partial_1",
+      "question_id": "3",
+      "expected_score": 7,
+      "actual_score": 7.0,
+      "tolerance": 2,
+      "passed": true,
+      "score_level": "high_partial",
+      "tags": [
+        "error_type:surface_reword",
+        "student_level:mid"
+      ],
+      "ai_comment": "要素AとCは本文のキーワードを日常語で言い換えているため部分点、要素Bは概念を捉えているため満点としました。\n【要素A: 2点】「深く受け止めて真剣に考えている状態」は「わからなさにとどまる」の方向性は合っているが、日常語レベルの言い換えに留まるため、4点中2点。\n【要素B: 3点】「相手を尊重している証拠」は「他者の他者性を損なわない」という概念を正確に捉えているため、3点。\n【要素C: 1点】「それこそ対話において」は対話との結びつきはあるが、「本質」や「核心」にまでは踏み込めていないため、2点中1点。\n【表現: 1点】文末「〜から。」",
+      "rationale": "Aの方向性は合っているが「わからなさにとどまる」ではなく「真剣に考えている」と読み替え。Bの「他者性」が「尊重」に一般化",
+      "expected_needs_review": true,
+      "actual_needs_review": true,
+      "review_reason": "要素A「わからなさにとどまる」を「深く受け止めて真剣に考えている」と日常語で言い換えているため、4点中2点としました。要素B「他者の他者性を損なわない」を「相手を尊重している」と捉え3点としましたが、本文のキーワードを直接用いていないため、微減すべきか教員判断をお願いします。また、全体として部分点の判断が複数あるため、確認をお願いします。"
+    },
+    {
+      "case_id": "q3_high_partial_boundary",
+      "question_id": "3",
+      "expected_score": 9,
+      "actual_score": 10.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "high_partial",
+      "tags": [
+        "boundary:upper",
+        "student_level:advanced",
+        "azabu:true"
+      ],
+      "ai_comment": "採点基準の全要素を正確に満たしています。\n【要素A: 4点】「相手の言葉のわからなさを引き受けてそこにとどまっている状態であり、それは安易な理解に走らず」\n【要素B: 3点】他者の他者性を守る\n【要素C: 2点】「〜にほかならないから」という表現で対話の本質との結びつきが強く示されている。\n【表現: 1点】文末「〜から。」",
+      "rationale": "A+Bを正確に押さえているがCの「対話の本質」との結びつきがやや弱い",
+      "expected_needs_review": true,
+      "actual_needs_review": true,
+      "review_reason": "模範解答とほぼ同内容で、採点基準の全要素を満たし満点としました。教員による最終確認をお願いします。"
+    },
+    {
+      "case_id": "q3_low_partial_1",
+      "question_id": "3",
+      "expected_score": 4,
+      "actual_score": 3.0,
+      "tolerance": 2,
+      "passed": true,
+      "score_level": "low_partial",
+      "tags": [
+        "error_type:surface_reword",
+        "student_level:mid"
+      ],
+      "ai_comment": "要素AとCは日常語レベルの言い換えに留まり、要素Bは欠落しています。\n【要素A: 1点】「じっくり考えている」は「わからなさにとどまる」の方向性は合っているが、表面的な言い換えに留まるため、4点中1点。\n【要素B: 0点】他者の他者性に関する記述がありません。\n【要素C: 1点】「対話がうまくいっている状態」は対話との結びつきはあるが、「本質」や「核心」にまでは踏み込めていないため、2点中1点。\n【表現: 1点】文末「〜から。」",
+      "rationale": "大筋の方向性は合っているが「わからなさ」「他者性」の概念が完全に欠落。日常語レベル",
+      "expected_needs_review": true,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q3_low_partial_2",
+      "question_id": "3",
+      "expected_score": 3,
+      "actual_score": 5.0,
+      "tolerance": 2,
+      "passed": true,
+      "score_level": "low_partial",
+      "tags": [
+        "error_type:off_topic",
+        "student_level:struggling"
+      ],
+      "ai_comment": "要素Aが完全に欠落しており、要素BとCは概念を捉えているものの、本文のキーワードを直接用いていません。\n【要素A: 0点】「わからなさにとどまる」に関する記述がありません。\n【要素B: 3点】「相手に対する思いやりや敬意を示す」は「他者の他者性を損なわない」という概念を正確に捉えているため、3点。\n【要素C: 1点】「重要なコミュニケーション手段」は対話との結びつきはあるが、「本質」や「核心」にまでは踏み込めていないため、2点中1点。\n【表現: 1点】文末「〜から。」",
+      "rationale": "「コミュニケーション手段」「思いやり」は本文の論点とずれている。文末形式は正しい",
+      "expected_needs_review": true,
+      "actual_needs_review": true,
+      "review_reason": "要素A「わからなさにとどまる」が完全に欠落しているため0点としました。要素B「他者の他者性を損なわない」を「思いやりや敬意を示す」と捉え3点としましたが、本文のキーワードを直接用いていないため、より厳しく減点すべきか教員判断をお願いします。また、全体として部分点の判断が複数あり、配点の40〜60%付近のボーダーケースであるため、確認をお願いします。"
+    },
+    {
+      "case_id": "q3_zero_short",
+      "question_id": "3",
+      "expected_score": 1,
+      "actual_score": 0.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "zero",
+      "tags": [
+        "error_type:missing_element",
+        "student_level:minimal"
+      ],
+      "ai_comment": "「沈黙にも意味がある」という記述は、設問の意図から大きく外れており、本文の具体的なキーワードや概念を全く踏まえていません。内容が的外れなため、形式点も含め0点とします。",
+      "rationale": "文末は正しいが内容が極端に不足",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q4_full",
+      "question_id": "4",
+      "expected_score": 10,
+      "actual_score": 10.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "full",
+      "tags": [
+        "student_level:advanced"
+      ],
+      "ai_comment": "模範解答とほぼ同内容で、採点基準の全要素を正確に満たしています。本文のキーワード・概念を正確に踏まえた上で、自分の言葉で再構成して説明できています。",
+      "rationale": "全要素を正確に含む",
+      "expected_needs_review": true,
+      "actual_needs_review": true,
+      "review_reason": "満点解答のため、教員による最終確認をお願いします。"
+    },
+    {
+      "case_id": "q4_high_partial_1",
+      "question_id": "4",
+      "expected_score": 7,
+      "actual_score": 8.0,
+      "tolerance": 2,
+      "passed": true,
+      "score_level": "high_partial",
+      "tags": [
+        "error_type:surface_reword",
+        "student_level:mid"
+      ],
+      "ai_comment": "要素A「相手の言葉をすぐにわかりやすく解釈しようとすると」と要素C「表面的な理解にとどまって深い関係を築けなくなる」は適切に捉えられています。要素Bは「微妙なニュアンスを見落としてしまい」と表現し「多義性や曖昧さ」に近い概念を捉えていますが、「他者の固有性の表れを切り捨てる」という核心部分が「見落としてしまう」と日常語レベルの表現に留まっているため、部分点としました。",
+      "rationale": "A・Cの方向性は合っているが、Bの「多義性・曖昧さ＝他者の固有性」が「微妙なニュアンス」に一般化",
+      "expected_needs_review": true,
+      "actual_needs_review": true,
+      "review_reason": "要素B「多義性・曖昧さ＝他者の固有性が切り捨てられること」を「微妙なニュアンスを見落としてしまう」と表現しており、概念の方向性は合っているものの日常語レベルの言い換えに留まるため、4点中2点としました。この部分点の判断について教員確認をお願いします。"
+    },
+    {
+      "case_id": "q4_high_partial_independent",
+      "question_id": "4",
+      "expected_score": 9,
+      "actual_score": 10.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "high_partial",
+      "tags": [
+        "student_level:advanced",
+        "azabu:true",
+        "boundary:upper"
+      ],
+      "ai_comment": "本文の概念を正確に捉え、「効率的に処理」「解釈の余地や意味の重層性」「捨象」「他者を自分の理解可能な範囲に押し込めてしまう」「表面的な情報交換に堕する」といった独自の学術的表現で再構成して説明できています。採点基準の全要素を高いレベルで満たしています。",
+      "rationale": "独自の表現だが概念は正確。「意味の重層性」「捨象」等の語彙力が高い。Cの表現がやや異なるが趣旨は合致",
+      "expected_needs_review": true,
+      "actual_needs_review": true,
+      "review_reason": "満点解答のため、教員による最終確認をお願いします。"
+    },
+    {
+      "case_id": "q4_low_partial_1",
+      "question_id": "4",
+      "expected_score": 5,
+      "actual_score": 7.0,
+      "tolerance": 2,
+      "passed": true,
+      "score_level": "low_partial",
+      "tags": [
+        "error_type:surface_reword",
+        "student_level:mid"
+      ],
+      "ai_comment": "要素A「わかりやすさばかりを求めると」は適切に捉えられています。要素Bは「相手の複雑な気持ちや考えを単純にしてしまい」と日常語レベルの言い換えに留まります。要素Cは「相手のことを本当には理解できなくなってしまう」と結果を捉えています。文末表現が「〜こと。」であるため、形式点として-1点減点しました。",
+      "rationale": "Aの方向性のみ。「多義性」「固有性」「真の出会い」の概念が日常語に",
+      "expected_needs_review": true,
+      "actual_needs_review": true,
+      "review_reason": "要素B「多義性・曖昧さ」を「複雑な気持ちや考えを単純にする」と日常語レベルで言い換えているため、4点中2点としました。また、文末表現が「〜こと。」のため-1点減点しました。これらの判断について教員確認をお願いします。"
+    },
+    {
+      "case_id": "q4_low_partial_general",
+      "question_id": "4",
+      "expected_score": 2,
+      "actual_score": 3.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "low_partial",
+      "tags": [
+        "error_type:surface_reword",
+        "student_level:struggling"
+      ],
+      "ai_comment": "「わかりやすさ」への志向を「難しい話を簡単にしすぎる」と一般論的に捉えているため、要素Aは部分点（2点）。要素Bは「大切な内容が伝わらなくなる」と本文の「多義性・曖昧さ」や「他者の固有性」といった核心概念に触れておらず0点。要素Cは「他者との関係に悪影響がある」と一般論に留まるため部分点（1点）としました。",
+      "rationale": "一般論レベル。本文の具体的概念への言及が皆無",
+      "expected_needs_review": true,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q4_zero_blank",
+      "question_id": "4",
+      "expected_score": 0,
+      "actual_score": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "zero",
+      "tags": [
+        "student_level:minimal"
+      ],
+      "ai_comment": "空欄のため0点。",
+      "rationale": "白紙",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q5_full",
+      "question_id": "5",
+      "expected_score": 10,
+      "actual_score": 10.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "full",
+      "tags": [
+        "student_level:advanced"
+      ],
+      "ai_comment": "採点基準の全要素（A: 聴く＝既有の枠組みへの同化ではない、B: わからなさにとどまる・受動的態度、C: 自己の認識の変容につながる、D: 他者との真の出会い・対話の条件）を、本文のキーワードを正確に踏まえて記述している。字数も適切。",
+      "rationale": "全4要素を網羅。字数も120字以内に収まっている",
+      "expected_needs_review": true,
+      "actual_needs_review": true,
+      "review_reason": "模範解答とほぼ同じ内容で、採点基準の全要素を本文のキーワードを正確に踏まえて記述しているため満点とした。教員確認をお願いします。"
+    },
+    {
+      "case_id": "q5_high_partial_3elem",
+      "question_id": "5",
+      "expected_score": 8,
+      "actual_score": 6.0,
+      "tolerance": 1,
+      "passed": false,
+      "score_level": "high_partial",
+      "tags": [
+        "student_level:mid"
+      ],
+      "ai_comment": "要素A「相手を理解しようとすることではなく」は、本文の「既有の枠組みへの同化ではない」を日常語で言い換えているため部分点（1.5点）。要素B「わからないことに耐えながら向き合う態度」はキーワード「わからない」を使用し、概念を正確に捉えているため満点（3点）。要素C「自分の考えが変わる」は「自己の認識の変容」を日常語で言い換えているため部分点（1点）。要素D「他者との深い関係を築く上で不可欠」は「他者との真の出会い・対話の条件」を日常語で言い換えているため部分点（1点）。合計6.5点だが、部分点の目安「3要素 → 7-8点」と照らし合わせ、キーワードの踏まえ方が甘い要素が多いため6点とした。",
+      "rationale": "A・B・Dを含むがCの「自己の認識の変容」への明示的言及が弱い。「考えが変わる」はCに近いが精度不足",
+      "expected_needs_review": true,
+      "actual_needs_review": true,
+      "review_reason": "要素A, C, Dが本文の概念を日常語レベルで言い換えているため、それぞれ部分点とした。合計6点としたが、キーワードの踏まえ方についてより厳しく評価すべきか、教員判断をお願いします。"
+    },
+    {
+      "case_id": "q5_high_partial_imprecise",
+      "question_id": "5",
+      "expected_score": 9,
+      "actual_score": 8.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "high_partial",
+      "tags": [
+        "student_level:advanced",
+        "azabu:true",
+        "boundary:upper"
+      ],
+      "ai_comment": "要素A「自分の既存の理解に安住せず」は、本文の概念を捉えつつ独自の学術的表現で言い換えているためおおむね満点（2.5点）。要素B「他者の言葉が持つ未知の意味に開かれること」「受動的で忍耐強い姿勢」は、キーワード「受動的」を使用し、概念を捉えつつ独自の表現で言い換えているためおおむね満点（2.5点）。要素C「自分自身の認識が刷新され」は「自己の認識の変容」を独自の表現で言い換えているためおおむね満点（1.5点）。要素D「他者との間に表面的でない真の交流が生まれる」は、キーワード「真の」を使用し、概念を捉えつつ独自の表現で言い換えているためおおむね満点（1.5点）。合計8点。字数も適切。",
+      "rationale": "4要素すべて含むが独自表現が多い。「認識が刷新」はCの的確な言い換え。満点に近い",
+      "expected_needs_review": true,
+      "actual_needs_review": true,
+      "review_reason": "採点基準の各要素について、本文の概念を捉えつつ独自の学術的表現で言い換えているため、おおむね満点（微減）として部分点を与えた。合計8点としたが、このレベルの言い換えに対する評価について教員判断をお願いします。"
+    },
+    {
+      "case_id": "q5_low_partial_surface",
+      "question_id": "5",
+      "expected_score": 5,
+      "actual_score": 1.0,
+      "tolerance": 2,
+      "passed": false,
+      "score_level": "low_partial",
+      "tags": [
+        "error_type:surface_reword",
+        "student_level:mid"
+      ],
+      "ai_comment": "要素A「相手の話を受け入れるだけでなく」は、概念の方向性は合っているが表面的な言い換えに留まるため部分点（0.5点）。要素B「わからなさにとどまる・受動的態度」については記述がなく0点。要素C「自分の考えを見直すきっかけになる」は、概念の方向性は合っているが日常語レベルの表面的な言い換えに留まるため部分点（0.5点）。要素D「対話の本質であり、他者との関係を豊かにするもの」は、概念の方向性は合っているが日常語レベルの表面的な言い換えに留まるため部分点（0.5点）。合計1.5点だが、要素Bの欠落と全体的な表面性を考慮し1点とした。字数も適切。",
+      "rationale": "方向性は合っているが概念が浅い。「発信ばかりが重視される」は本文にない読み込み。B・Cが不十分",
+      "expected_needs_review": true,
+      "actual_needs_review": true,
+      "review_reason": "要素A, C, Dは概念の方向性は合っているものの、日常語レベルの表面的な言い換えに留まっているため、それぞれ最低限の部分点とした。要素B『わからなさにとどまる・受動的態度』が完全に欠落しているため、合計1点としたが、この評価で適切か教員判断をお願いします。"
+    },
+    {
+      "case_id": "q5_off_topic_opinion",
+      "question_id": "5",
+      "expected_score": 0,
+      "actual_score": 0.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "off_topic",
+      "tags": [
+        "error_type:off_topic",
+        "student_level:struggling"
+      ],
+      "ai_comment": "設問は筆者の主張を問うているが、解答は本文の核心的な概念に全く触れず、一般的な「聴くことの重要性」を述べ、さらに自身の感想で締めくくっている。本文の概念と異なる一般論に読み替えているため、的外れな内容として0点とする。",
+      "rationale": "本文の哲学的論点を踏まえていない。最後に「思った」と自分の感想になっている。一般的な「傾聴の大切さ」への読み替え",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q5_zero_too_short",
+      "question_id": "5",
+      "expected_score": 1,
+      "actual_score": 0.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "zero",
+      "tags": [
+        "error_type:missing_element",
+        "student_level:minimal"
+      ],
+      "ai_comment": "字数が大幅に不足しており、本文のキーワードや概念に全く触れていない。一般的な「聴くことの重要性」を述べているに過ぎず、設問の意図から完全に外れているため0点。",
+      "rationale": "字数大幅不足（約35字/120字）、内容も一般論レベル",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q5_zero_blank",
+      "question_id": "5",
+      "expected_score": 0,
+      "actual_score": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "zero",
+      "tags": [
+        "student_level:minimal"
+      ],
+      "ai_comment": "空欄のため0点。",
+      "rationale": "白紙",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q5_format_error_overcount",
+      "question_id": "5",
+      "expected_score": 9,
+      "actual_score": 9.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "high_partial",
+      "tags": [
+        "error_type:format_error",
+        "boundary:upper"
+      ],
+      "ai_comment": "採点基準の全要素（A, B, C, D）を、本文のキーワードを正確に踏まえて記述しており、内容としては満点（10点）。しかし、字数が179字と120字を大幅に超過しているため、形式点として-1点減点し、最終得点は9点とした。",
+      "rationale": "内容は優秀だが120字を大幅超過（約180字）。採点基準により-1点",
+      "expected_needs_review": true,
+      "actual_needs_review": false,
+      "review_reason": null
+    }
+  ],
+  "by_question": {
+    "1": {
+      "total": 9,
+      "passed": 9
+    },
+    "2": {
+      "total": 9,
+      "passed": 8
+    },
+    "3": {
+      "total": 6,
+      "passed": 6
+    },
+    "4": {
+      "total": 6,
+      "passed": 6
+    },
+    "5": {
+      "total": 8,
+      "passed": 6
+    }
+  },
+  "by_score_level": {
+    "full": {
+      "total": 7,
+      "passed": 7
+    },
+    "zero": {
+      "total": 12,
+      "passed": 12
+    },
+    "high_partial": {
+      "total": 10,
+      "passed": 8
+    },
+    "low_partial": {
+      "total": 7,
+      "passed": 6
+    },
+    "off_topic": {
+      "total": 2,
+      "passed": 2
+    }
+  },
+  "needs_review_metrics": {
+    "tp": 17,
+    "fp": 0,
+    "fn": 4,
+    "tn": 17,
+    "precision": 1.0,
+    "recall": 0.81,
+    "f1": 0.895
+  }
+}

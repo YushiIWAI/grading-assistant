@@ -69,6 +69,7 @@ class QuestionScore:
     comment: str = ""  # 採点コメント
     confidence: str = "medium"  # "high", "medium", "low"
     needs_review: bool = False  # 要確認フラグ
+    review_reason: str = ""  # 要確認の具体的理由（AIが判断に迷った内容）
     reviewed: bool = False  # 教員確認済みフラグ
     ai_score: float | None = None  # AI初期スコアのバックアップ（教員修正後に「戻す」用）
 

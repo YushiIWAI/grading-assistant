@@ -76,6 +76,7 @@ def export_csv(session: ScoringSession) -> str:
                 f"問{qs.question_id}_コメント",
                 f"問{qs.question_id}_確信度",
                 f"問{qs.question_id}_要確認",
+                f"問{qs.question_id}_確認理由",
             ])
     headers.extend(["合計点", "満点", "教員メモ"])
     writer.writerow(headers)
@@ -91,6 +92,7 @@ def export_csv(session: ScoringSession) -> str:
                 qs.comment,
                 qs.confidence,
                 "要確認" if qs.needs_review else "",
+                qs.review_reason if qs.needs_review else "",
             ])
         row.extend([student.total_score, student.total_max_points, student.reviewer_notes])
         writer.writerow(row)

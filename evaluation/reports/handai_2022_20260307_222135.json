@@ -1,0 +1,623 @@
+{
+  "exam_id": "handai_2022",
+  "exam_title": "現代文（大阪大学2022年前期）",
+  "provider_name": "Gemini (gemini-2.5-flash)",
+  "total_cases": 32,
+  "passed_cases": 28,
+  "pass_rate": 87.5,
+  "elapsed_seconds": 89.8,
+  "errors": [],
+  "results": [
+    {
+      "case_id": "q1a_correct",
+      "question_id": "1-a",
+      "expected_score": 1,
+      "actual_score": 1.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "full",
+      "tags": [
+        "student_level:all"
+      ],
+      "ai_comment": "正答「奏」と一致しています。",
+      "rationale": "正答",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q1a_wrong_homophone",
+      "question_id": "1-a",
+      "expected_score": 0,
+      "actual_score": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "zero",
+      "tags": [
+        "error_type:factual_error",
+        "student_level:struggling"
+      ],
+      "ai_comment": "「奉」は「カナデる」の文脈に合致しません。正答は「奏」です。",
+      "rationale": "形の似た漢字の混同。「奏」と「奉」",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q1b_correct",
+      "question_id": "1-b",
+      "expected_score": 1,
+      "actual_score": 1.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "full",
+      "tags": [
+        "student_level:all"
+      ],
+      "ai_comment": "正答「実態」と一致しています。",
+      "rationale": "正答",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": ""
+    },
+    {
+      "case_id": "q1b_wrong_homophone",
+      "question_id": "1-b",
+      "expected_score": 0,
+      "actual_score": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "zero",
+      "tags": [
+        "error_type:factual_error",
+        "student_level:mid"
+      ],
+      "ai_comment": "「実体」は誤りです。正答は「実態」です。",
+      "rationale": "同音異義語の混同。「実態」（実際の状態）と「実体」（本体・本質）は別の語",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": ""
+    },
+    {
+      "case_id": "q1c_correct",
+      "question_id": "1-c",
+      "expected_score": 1,
+      "actual_score": 1.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "full",
+      "tags": [
+        "student_level:all"
+      ],
+      "ai_comment": "正答「方略」と一致しています。",
+      "rationale": "正答",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q1c_wrong",
+      "question_id": "1-c",
+      "expected_score": 0,
+      "actual_score": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "zero",
+      "tags": [
+        "error_type:factual_error",
+        "student_level:mid"
+      ],
+      "ai_comment": "正答は「方略」です。「方策」は誤りです。",
+      "rationale": "類義語だが字が違う。「方略」が正答であり「方策」は不正解",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q1d_correct",
+      "question_id": "1-d",
+      "expected_score": 1,
+      "actual_score": 1.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "full",
+      "tags": [
+        "student_level:all"
+      ],
+      "ai_comment": "「優遇」と正しく書けている。",
+      "rationale": "正答",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": ""
+    },
+    {
+      "case_id": "q1d_wrong",
+      "question_id": "1-d",
+      "expected_score": 0,
+      "actual_score": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "zero",
+      "tags": [
+        "error_type:factual_error",
+        "student_level:struggling"
+      ],
+      "ai_comment": "「偶」の字が誤り。",
+      "rationale": "「遇」→「偶」の混同",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": ""
+    },
+    {
+      "case_id": "q1d_blank",
+      "question_id": "1-d",
+      "expected_score": 0,
+      "actual_score": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "zero",
+      "tags": [
+        "student_level:minimal"
+      ],
+      "ai_comment": "空欄のため0点。",
+      "rationale": "空欄",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": ""
+    },
+    {
+      "case_id": "q2_full",
+      "question_id": "2",
+      "expected_score": 8,
+      "actual_score": 8.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "full",
+      "tags": [
+        "student_level:advanced"
+      ],
+      "ai_comment": "模範解答とほぼ同じ内容で、全ての採点基準要素（A:強制、B:インセンティブの内容、C:太陽の意識的な使用、D:対比、E:成功）を満たしています。字数も適切です。",
+      "rationale": "全要素を正確に含む模範的な解答。78字",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q2_high_partial_1",
+      "question_id": "2",
+      "expected_score": 7,
+      "actual_score": 7.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "high_partial",
+      "tags": [
+        "student_level:advanced",
+        "boundary:upper"
+      ],
+      "ai_comment": "全ての採点基準要素（A:力ずく、B:インセンティブの内容、C:太陽の使用、D:対比、E:成功）を満たしていますが、「力ずく」が「強制」の言い換えである点と、字数が89字とやや超過しているため、字数超過で-1点としました。",
+      "rationale": "全要素の方向性を含むが「意識的に」の明示が弱い。83字でやや字数超過",
+      "expected_needs_review": true,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q2_high_partial_2",
+      "question_id": "2",
+      "expected_score": 6,
+      "actual_score": 8.0,
+      "tolerance": 1,
+      "passed": false,
+      "score_level": "high_partial",
+      "tags": [
+        "student_level:mid"
+      ],
+      "ai_comment": "全ての採点基準要素（A:強制的な方法、B:自発的に服を脱がせる、C:太陽がインセンティブを用いて、D:対比、E:成功）を正確に記述しています。字数も適切です。",
+      "rationale": "対比と結果は明確だが、B（インセンティブの内容＝自発的行動を仕向ける）の説明がやや不十分。68字",
+      "expected_needs_review": true,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q2_low_partial_1",
+      "question_id": "2",
+      "expected_score": 3,
+      "actual_score": 5.0,
+      "tolerance": 1,
+      "passed": false,
+      "score_level": "low_partial",
+      "tags": [
+        "error_type:surface_reword",
+        "student_level:mid"
+      ],
+      "ai_comment": "要素A（北風の行動）は「力」と日常語で言い換えており、0.5点。要素B（インセンティブの内容）は「暖かさで自然に脱がせる」と記述しているものの、「インセンティブ」というキーワードがなく、概念の捉え方が表面的なため0.5点。要素C（太陽の意識的な使用）は「暖かさで成功した」とあるが、「意識的に用いた」という点が不明瞭なため1点。要素D（対比）とE（成功）は明確に記述されており、それぞれ1点、2点としました。字数は適切です。",
+      "rationale": "「インセンティブ」の概念に全く触れていない。「優しい方法」は本文の論点とずれている。北風＝強制とE（成功）のみ",
+      "expected_needs_review": false,
+      "actual_needs_review": true,
+      "review_reason": "「インセンティブ」という本文の重要キーワードが欠落しており、その概念も「暖かさで自然に脱がせる」という日常語レベルの表現に留まっている。要素B（インセンティブの内容）とC（意識的な使用）の評価を厳しくし、それぞれ0.5点、1点とした。結果として5点としたが、キーワードの踏まえ方をより厳しく評価する場合、さらに減点すべきか教員判断をお願いします。"
+    },
+    {
+      "case_id": "q2_low_partial_2",
+      "question_id": "2",
+      "expected_score": 1,
+      "actual_score": 2.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "low_partial",
+      "tags": [
+        "error_type:surface_reword",
+        "student_level:struggling"
+      ],
+      "ai_comment": "要素D（対比）とE（効果的だった）は記述されていますが、それ以外の要素（A, B, C）が欠落しており、内容が非常に表面的です。字数も24字と大幅に不足しているため、-1点減点しました。",
+      "rationale": "方向性は合っているが極端に抽象的。インセンティブの概念も強制の説明もない。字数も大幅不足（22字）",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q2_off_topic",
+      "question_id": "2",
+      "expected_score": 0,
+      "actual_score": 0.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "off_topic",
+      "tags": [
+        "error_type:off_topic",
+        "student_level:struggling"
+      ],
+      "ai_comment": "解答は寓話の一般的な教訓を述べており、本文で論じられている「インセンティブ」の概念に基づく解釈とは異なるため、設問の意図から完全に外れています。",
+      "rationale": "本文の議論（インセンティブ論）を踏まえていない。一般的な道徳教訓への読み替え",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q2_zero_blank",
+      "question_id": "2",
+      "expected_score": 0,
+      "actual_score": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "zero",
+      "tags": [
+        "student_level:minimal"
+      ],
+      "ai_comment": "空欄です。",
+      "rationale": "白紙",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q3_full",
+      "question_id": "3",
+      "expected_score": 11,
+      "actual_score": 11.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "full",
+      "tags": [
+        "student_level:advanced"
+      ],
+      "ai_comment": "模範解答とほぼ同等の内容で、採点基準の全要素（A, B, C）を正確に含んでいます。字数（117字）も指定範囲内であり、論理構成・文末表現も適切です。",
+      "rationale": "全要素を正確に含む。117字",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q3_high_partial_1",
+      "question_id": "3",
+      "expected_score": 9,
+      "actual_score": 11.0,
+      "tolerance": 1,
+      "passed": false,
+      "score_level": "high_partial",
+      "tags": [
+        "student_level:advanced",
+        "boundary:upper"
+      ],
+      "ai_comment": "採点基準の全要素（A, B, C）を正確に含んでおり、本文のキーワードを適切に用いて説明できています。字数（109字）も指定範囲内であり、論理構成・文末表現も適切です。",
+      "rationale": "A・B・Cの要素を独自の表現で含む。「サンクション」等の本文キーワードは欠くが概念は正確。112字",
+      "expected_needs_review": true,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q3_high_partial_2",
+      "question_id": "3",
+      "expected_score": 7,
+      "actual_score": 8.0,
+      "tolerance": 2,
+      "passed": true,
+      "score_level": "high_partial",
+      "tags": [
+        "student_level:mid"
+      ],
+      "ai_comment": "要素A「二分法にこだわりすぎていたこと」は「明確に分けて考える傾向があり」と捉えられています（3点）。要素B「法は外発的インセンティブであると同時に、内発的動機づけにも関わること」については、外発的側面への注目は指摘されていますが、法が内発的動機づけそのものに関わるという両面性の説明が不足しています（1.5点）。要素C「どちらが重要かという問題設定に偏っていたこと」は「一方にばかり注目してきた」という表現に留まり、問題設定への偏りというニュアンスがやや弱いと判断しました（2点）。字数（109字）と形式は適切です（2点）。",
+      "rationale": "Aの二分法への指摘とCの偏りは含むが、B（法が内発的動機づけにも関わる）の明示が弱い。110字",
+      "expected_needs_review": true,
+      "actual_needs_review": true,
+      "review_reason": "要素B「法は外発的インセンティブであると同時に、内発的動機づけにも関わること」について、解答は「法のサンクションが外発的な動機づけとしてどう作用するかばかりに注目してきた」と外発的側面への偏りを指摘していますが、法そのものが内発的動機づけにも関わるという両面性の説明が不足しています。また、要素C「どちらが重要かという問題設定に偏っていたこと」についても、「一方にばかり注目してきた」という表現に留まっています。要素Bを1.5点、要素Cを2点としましたが、この配点の妥当性について教員判断をお願いします。"
+    },
+    {
+      "case_id": "q3_low_partial_1",
+      "question_id": "3",
+      "expected_score": 4,
+      "actual_score": 2.0,
+      "tolerance": 2,
+      "passed": true,
+      "score_level": "low_partial",
+      "tags": [
+        "error_type:surface_reword",
+        "student_level:mid"
+      ],
+      "ai_comment": "要素AとC（二分法へのこだわりや問題設定への偏り）に関する言及がありません（0点）。要素B「法の二面性」については、「法は罰を与えたり報酬を与えたりするものだが、人の行動には外からの力だけでなく内面的な動機も関わる」と、概念の方向性は合っていますが、「外からの力」「内面的な動機」といった日常語レベルの表面的な言い換えに留まっています（1.5点）。字数（89字）が不足しているため、形式点で-1点としました（1点）。",
+      "rationale": "Bの方向性は合っているが、A（二分法へのこだわり）・C（問題設定の偏り）が欠落。日常語レベルの記述",
+      "expected_needs_review": true,
+      "actual_needs_review": true,
+      "review_reason": "要素B「法は外発的インセンティブであると同時に、内発的動機づけにも関わること」について、「外からの力」や「内面的な動機」といった日常語レベルの表現に留まっています。本文のキーワード「外発的動機づけ」「内発的動機づけ」を正確に用いていないため、1.5点としましたが、この部分点の妥当性について教員判断をお願いします。また、字数不足による減点も考慮し、最終的な点数について確認をお願いします。"
+    },
+    {
+      "case_id": "q3_low_partial_2",
+      "question_id": "3",
+      "expected_score": 2,
+      "actual_score": 0.0,
+      "tolerance": 1,
+      "passed": false,
+      "score_level": "low_partial",
+      "tags": [
+        "error_type:surface_reword",
+        "student_level:struggling"
+      ],
+      "ai_comment": "「インセンティブには外発的なものと内発的なものがあり、その区別が難しいため研究が進んでいない」という記述は、本文の一部に触れていますが、設問の「著者がなぜそのように考えているのか」という問いに対する直接的な理由説明になっていません。法の効果の研究における問題設定の偏りや二分法へのこだわりといった核心部分が欠落しており、的外れな内容と判断しました。字数も大幅に不足しています（49字）。",
+      "rationale": "外発/内発の存在に触れているが、法との関係、研究者の問題設定の偏りなど本文の具体的論点が皆無。字数も大幅不足（46字）",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q3_off_topic",
+      "question_id": "3",
+      "expected_score": 0,
+      "actual_score": 0.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "off_topic",
+      "tags": [
+        "error_type:off_topic",
+        "student_level:struggling"
+      ],
+      "ai_comment": "法律の一般的な役割や限界について述べており、傍線部(2)の「法は外発的インセンティブと内発的動機づけの二分法に収まらない」という著者の考えの理由に全く触れていません。本文のキーワードや概念も使用されておらず、設問の意図から完全に外れた的外れな内容です。",
+      "rationale": "本文のインセンティブ論を踏まえていない。法と行動の一般論への読み替え",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q3_zero_blank",
+      "question_id": "3",
+      "expected_score": 0,
+      "actual_score": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "zero",
+      "tags": [
+        "student_level:minimal"
+      ],
+      "ai_comment": "空欄のため0点です。",
+      "rationale": "白紙",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q4_full",
+      "question_id": "4",
+      "expected_score": 12,
+      "actual_score": 12.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "full",
+      "tags": [
+        "student_level:advanced"
+      ],
+      "ai_comment": "模範解答と完全に一致しており、実験の内容、結果、およびそのメカニズム（好意に基づく社会的交換関係から金銭的取引関係への変質、内発的動機の喪失、外発的インセンティブによる内発的動機づけの阻害）まで、全ての採点要素を正確に記述している。字数も適切。",
+      "rationale": "全要素を正確に含む。116字",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q4_high_partial_1",
+      "question_id": "4",
+      "expected_score": 10,
+      "actual_score": 10.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "high_partial",
+      "tags": [
+        "student_level:advanced",
+        "boundary:upper"
+      ],
+      "ai_comment": "実験の内容（A）、結果（B）、金銭的取引関係への変質（D）、内発的動機の喪失（E）、および外発的インセンティブが内発的動機づけを阻害したこと（F）を正確に説明している。しかし、罰金導入前の「好意に基づく社会的交換関係」（C）についての記述が不足している。",
+      "rationale": "C（それまで好意・社会的交換関係だった）の明示がやや弱いが、他の要素は正確。119字",
+      "expected_needs_review": true,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q4_high_partial_2",
+      "question_id": "4",
+      "expected_score": 8,
+      "actual_score": 8.0,
+      "tolerance": 2,
+      "passed": true,
+      "score_level": "high_partial",
+      "tags": [
+        "student_level:mid"
+      ],
+      "ai_comment": "実験の内容（A）と結果（B）、および関係性の変質（好意から金銭的取引へ）（C, D）は正確に説明されている。しかし、その変質が親の内発的動機にどう影響したか（E）、また外発的インセンティブが内発的動機づけを阻害したというメカニズム（F）についての記述が不足している。",
+      "rationale": "実験の内容と結果、関係性の変質は書けているが、E（内発的動機の喪失）とF（クラウディング・アウトの論理）が不十分。107字",
+      "expected_needs_review": true,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q4_high_partial_independent",
+      "question_id": "4",
+      "expected_score": 11,
+      "actual_score": 12.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "high_partial",
+      "tags": [
+        "student_level:advanced",
+        "boundary:upper"
+      ],
+      "ai_comment": "実験の内容（A）と結果（B）、罰金導入前後の親の認識の変化（C, D）、内発的動機の喪失（E）、および外発的インセンティブが内発的動機づけを阻害したメカニズム（F）まで、全ての採点要素を具体的に説明している。模範解答と表現は異なるが、内容は完全に合致している。字数も適切。",
+      "rationale": "独自表現だが全要素を含む。「好意に甘えまいとする気持ち」は内発的動機の的確な言い換え。130字でやや字数超過（-1点）",
+      "expected_needs_review": true,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q4_low_partial_1",
+      "question_id": "4",
+      "expected_score": 5,
+      "actual_score": 6.0,
+      "tolerance": 2,
+      "passed": true,
+      "score_level": "low_partial",
+      "tags": [
+        "error_type:surface_reword",
+        "student_level:mid"
+      ],
+      "ai_comment": "実験の内容（A）と結果（B）、および罰金導入後の親の認識の変化（D）は捉えている。しかし、罰金導入前の状況（C）や、内発的動機づけの喪失というキーワードを用いた説明（E）、クラウディング・アウトの概念（F）に触れていないため、説明が不十分。字数（69字）も大幅に不足しているため、-1点減点。",
+      "rationale": "A・Bは含むが、社会的交換関係から金銭的取引関係への変質（C・D）、内発的動機の喪失（E）の概念が欠落。65字で字数大幅不足",
+      "expected_needs_review": true,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q4_low_partial_2",
+      "question_id": "4",
+      "expected_score": 4,
+      "actual_score": 5.0,
+      "tolerance": 2,
+      "passed": true,
+      "score_level": "low_partial",
+      "tags": [
+        "error_type:missing_element",
+        "student_level:mid"
+      ],
+      "ai_comment": "外発的インセンティブが内発的動機づけを阻害し、遅刻が増加したという結論部分（B, E, F）は正確に捉えている。しかし、具体的な実験内容（A）や、関係性の変質（C, D）についての記述が完全に欠落しており、説明が抽象的すぎる。字数（69字）も大幅に不足しているため、-1点減点。",
+      "rationale": "結論（E・F）は述べているが、実験の具体的内容（罰金の仕組み・託児所という設定）と関係性の変質（C・D）が欠落。抽象的すぎる。字数不足（66字）",
+      "expected_needs_review": true,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q4_off_topic",
+      "question_id": "4",
+      "expected_score": 0,
+      "actual_score": 0.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "off_topic",
+      "tags": [
+        "error_type:off_topic",
+        "student_level:struggling"
+      ],
+      "ai_comment": "本文のテーマであるインセンティブや内発的動機づけに関する一般論に終始しており、設問が求める「本文で示された実験結果に基づき、具体的に説明」という指示から完全に逸脱している。実験の内容や結果、具体的な因果関係が全く説明されていないため、0点とする。",
+      "rationale": "実験の具体的内容に触れていない。「人の内面に働きかける重要性」は本文の趣旨と異なる一般論",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q4_zero_short",
+      "question_id": "4",
+      "expected_score": 1,
+      "actual_score": 1.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "zero",
+      "tags": [
+        "error_type:missing_element",
+        "student_level:minimal"
+      ],
+      "ai_comment": "実験の導入と結果の概要（A, B）は捉えているが、具体的な内容や因果関係の説明が著しく不足しており、設問の意図をほとんど満たしていない。字数（14字）も大幅に不足しているため、-1点減点。",
+      "rationale": "結果に触れているが極端に内容不足。字数も大幅不足（14字）",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q4_zero_blank",
+      "question_id": "4",
+      "expected_score": 0,
+      "actual_score": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "zero",
+      "tags": [
+        "student_level:minimal"
+      ],
+      "ai_comment": "空欄のため、0点。",
+      "rationale": "白紙",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    }
+  ],
+  "by_question": {
+    "1": {
+      "total": 9,
+      "passed": 9
+    },
+    "2": {
+      "total": 7,
+      "passed": 5
+    },
+    "3": {
+      "total": 7,
+      "passed": 5
+    },
+    "4": {
+      "total": 9,
+      "passed": 9
+    }
+  },
+  "by_score_level": {
+    "full": {
+      "total": 7,
+      "passed": 7
+    },
+    "zero": {
+      "total": 9,
+      "passed": 9
+    },
+    "high_partial": {
+      "total": 7,
+      "passed": 5
+    },
+    "low_partial": {
+      "total": 6,
+      "passed": 4
+    },
+    "off_topic": {
+      "total": 3,
+      "passed": 3
+    }
+  },
+  "needs_review_metrics": {
+    "tp": 2,
+    "fp": 1,
+    "fn": 8,
+    "tn": 21,
+    "precision": 0.667,
+    "recall": 0.2,
+    "f1": 0.308
+  }
+}

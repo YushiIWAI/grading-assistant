@@ -117,6 +117,23 @@ VERIFICATION_SCHEMA = {
     "results": {"required": True, "type": list, "items_schema": VERIFICATION_ITEM_SCHEMA},
 }
 
+# レイアウト分析スキーマ
+LAYOUT_REGION_SCHEMA = {
+    "question_id": {"required": True, "type": (str, int)},
+    "location": {"required": True, "type": str},
+    "size_hint": {"required": False, "type": str},
+}
+
+LAYOUT_PAGE_SCHEMA = {
+    "page_number": {"required": True, "type": (int,)},
+    "regions": {"required": True, "type": list, "items_schema": LAYOUT_REGION_SCHEMA},
+}
+
+LAYOUT_SCHEMA = {
+    "pages": {"required": True, "type": list, "items_schema": LAYOUT_PAGE_SCHEMA},
+    "overall_structure": {"required": True, "type": str},
+}
+
 
 def _validate_schema(data: dict, schema: dict, context: str = "") -> list[str]:
     """パース済みJSONをスキーマ定義に対して検証する。
@@ -178,6 +195,19 @@ OCR_SYSTEM_PROMPT = """\
 - 改行がある場合はそのまま含めてください
 """
 
+LAYOUT_ANALYSIS_SYSTEM_PROMPT = """\
+あなたは答案用紙のレイアウト分析専用AIです。
+答案画像の構造を分析し、各解答欄の位置と構成を報告してください。
+文字の読み取りは行わないでください。レイアウトの分析のみを行います。
+
+分析のポイント:
+- 各解答欄がページ内のどの位置にあるか（上部/中央/下部、左/右 等）
+- 解答欄の大きさの目安（1行分/複数行/大きな記述欄 等）
+- 解答欄の書字方向（横書き/縦書き）
+- 設問番号の表記方法（印字されているか、どこに書かれているか）
+- ページ間のレイアウトの違い
+"""
+
 HORIZONTAL_GRADING_SYSTEM_PROMPT = """\
 あなたは国語の採点補助AIです。複数の学生の解答を同時に評価し、一貫した基準で仮採点します。
 
@@ -187,16 +217,49 @@ HORIZONTAL_GRADING_SYSTEM_PROMPT = """\
 - 学生間の相対的な出来を意識し、一貫性のある採点を行ってください
 - 本文のキーワードや概念を正確に用いた説明と、日常語による表面的な言い換えを明確に区別してください
 
+キーワードの踏まえ方の評価基準（記述式で重要）:
+- 本文のキーワードや概念を正確に使用している → その要素は満点
+- 本文の概念は捉えているが、独自の学術的表現で言い換えている → その要素はおおむね満点（微減）
+- 概念の方向性は合っているが、日常語レベルの表面的な言い換えに留まる → その要素は半分以下の部分点
+- 本文の概念と異なる一般論に読み替えている → その要素は0点
+
+的外れ（off_topic）でも記述がある場合の扱い:
+- 完全に白紙・意味不明 → 0点
+- 的外れな内容で、設問の意図から完全に外れている → 0点（形式を守っていても加点しない）
+- 方向性が大きくずれているが、本文の一部に触れている → 触れている要素に対する最低限の部分点を検討
+- 判断に迷う場合は needs_review=true にして教員に委ねること
+
+形式点（文末表現等）の扱い:
+- 形式点は加点方式ではなく減点方式で扱う
+- 内容が正しい解答で文末形式（「〜から。」「〜こと。」等）を守っていない場合 → -1点程度の減点
+- 内容が的外れな解答には、形式を守っていても点数を与えてはならない
+
 confidence の基準:
 - high: 漢字・選択問題の正誤判定、または記述式で採点基準の全要素が明確に該当/非該当の場合
 - medium: 記述式の部分点判定（デフォルト）
 - low: 判読困難、採点基準の解釈に幅がある場合
 
-needs_review を true にする場合:
-- 部分点の判断が微妙な場合
-- 配点の40〜60%付近のボーダーケース
-- 満点を付与する記述式解答（教員確認推奨）
-- コメントの内容と得点の整合性に迷いがある場合
+needs_review の判定手順:
+採点コメントを書き終えた後、以下の自己チェックを行うこと:
+1. 各要素について、生徒が模範解答・本文と同じキーワードを使っているか、独自の言い換えをしているかを確認する
+2. 一つでも独自の言い換え・日常語への読み替えがある要素があれば → needs_review = true
+   ただし例外: 得点が配点の25%以下で、含まれている要素も表面的・抽象的な言及のみの場合は、教員判断が分かれる余地が小さいため needs_review = false でよい
+3. 上記に該当しなくても、以下のいずれかに該当すれば → needs_review = true:
+   - 採点基準の要素が暗示的・間接的にしか含まれず、該当/非該当の判断が分かれうる
+   - 配点の40〜60%付近のボーダーケース
+   - コメントの内容と得点の整合性に迷いがある
+
+needs_review = false とするのは以下のすべてを満たす場合のみ:
+- 採点基準の全要素について、模範解答・本文のキーワードをそのまま使って書かれている（独自の言い換えがない）
+- かつ、要素の該当/非該当が一義的に明確である
+- または、明らかに的外れ・白紙・極端に内容不足で低得点が確実な場合
+- または、漢字・選択問題の正誤判定
+
+review_reason（needs_review が true の場合は必須）:
+- needs_review を true にした場合、review_reason に「何について教員判断が必要か」を具体的に書いてください
+- 良い例: 「要素B『枠組みが揺さぶられる』を『考えが変わる』と日常語で言い換えている。概念は近いが本文のキーワードを踏まえていない。5点中3点としたが、より厳しく1点とすべきか教員判断をお願いします」
+- 良い例: 「的外れな内容で0点としたが、本文の一部に触れている可能性もあり、部分点付与の判断を教員にお願いします」
+- 悪い例: 「部分点の判断が微妙」（←具体性がない）
 """
 
 VERIFICATION_SYSTEM_PROMPT = """\
@@ -282,7 +345,8 @@ def build_scoring_prompt(
         '      "transcribed_text": "読み取った解答テキスト",',
         '      "comment": "採点の根拠や補足",',
         '      "confidence": "high/medium/low",',
-        '      "needs_review": true/false',
+        '      "needs_review": true/false,',
+        '      "review_reason": "needs_reviewがtrueの場合、教員に確認したい具体的な判断ポイント"',
         '    }',
         '  ],',
         '  "overall_comment": "答案全体に対するコメント"',
@@ -413,6 +477,144 @@ def build_ocr_prompt(rubric: Rubric) -> str:
     return "\n".join(lines)
 
 
+def build_layout_analysis_prompt(rubric: Rubric) -> str:
+    """レイアウト分析用プロンプト: 答案画像の構造を分析する（Phase 1-1）"""
+    lines = [
+        f"# 試験: {rubric.title}",
+        "",
+        "以下の答案画像のレイアウトを分析してください。",
+        "文字の読み取りは不要です。解答欄の位置と構成のみ報告してください。",
+        "",
+        "# 分析対象の設問一覧",
+    ]
+    TYPE_HINTS = {
+        "short_answer": "短答（語句・漢字の読みなど）",
+        "descriptive": "記述（文章での回答）",
+        "selection": "選択（記号や番号）",
+    }
+
+    all_ids = []
+    for q in rubric.questions:
+        type_hint = TYPE_HINTS.get(q.question_type, q.question_type)
+        if q.sub_questions:
+            lines.append(f"\n### 問{q.id}（{type_hint}）")
+            for sq in q.sub_questions:
+                lines.append(f"- 設問ID \"{sq.id}\": {sq.text}")
+                all_ids.append(sq.id)
+        else:
+            desc = q.description.strip().replace("\n", " ")
+            lines.append(f"- 設問ID \"{q.id}\": {desc[:60]}（{type_hint}）")
+            all_ids.append(str(q.id))
+
+    # レスポンス例
+    example_regions = ",\n      ".join(
+        f'{{"question_id": "{aid}", "location": "...", "size_hint": "..."}}'
+        for aid in all_ids[:2]
+    )
+    lines.extend([
+        "",
+        "# 回答形式",
+        "以下のJSON形式で回答してください。JSONのみを出力してください。",
+        "",
+        "各解答欄について:",
+        "- location: ページ内の位置を具体的に記述（例: 「上部、横書き」「中央やや右、縦書き」）",
+        "- size_hint: 解答欄の大きさの目安（例: 「1行分」「5行程度の記述欄」「10cm×15cm程度の大きな枠」）",
+        "",
+        "```json",
+        "{",
+        '  "pages": [',
+        "    {",
+        '      "page_number": 1,',
+        '      "regions": [',
+        f"        {example_regions}",
+        "      ]",
+        "    }",
+        "  ],",
+        '  "overall_structure": "全体構造の要約（ページ構成・レイアウトの特徴）"',
+        "}",
+        "```",
+    ])
+    return "\n".join(lines)
+
+
+def build_ocr_prompt_with_layout(rubric: Rubric, layout: dict) -> str:
+    """空間プロンプト付きOCR用プロンプト: レイアウト分析結果を踏まえて読み取る（Phase 1-2）"""
+    lines = [
+        f"# 試験: {rubric.title}",
+        "",
+        "以下の答案画像から、学生の氏名と各問の解答テキストを読み取ってください。",
+        "採点は不要です。テキストの読み取りのみ行ってください。",
+        "",
+        "# レイアウト情報（事前分析済み）",
+        f"全体構造: {layout.get('overall_structure', '不明')}",
+    ]
+
+    # ページごとのレイアウト情報を空間プロンプトとして提示
+    for page_info in layout.get("pages", []):
+        page_num = page_info.get("page_number", "?")
+        lines.append(f"\n## {page_num}ページ目の解答欄配置:")
+        for region in page_info.get("regions", []):
+            qid = region.get("question_id", "?")
+            loc = region.get("location", "不明")
+            size = region.get("size_hint", "")
+            size_str = f"（{size}）" if size else ""
+            lines.append(f"- 設問{qid}: {loc}{size_str}")
+
+    lines.extend([
+        "",
+        "# 読み取り指示",
+        "上記のレイアウト情報を参考に、各解答欄の位置に焦点を当てて読み取ってください。",
+        "解答欄の外にあるメモ・落書き・汚れは無視してください。",
+    ])
+
+    # 設問タイプのヒント
+    TYPE_HINTS = {
+        "short_answer": "短答（語句・漢字の読みなど短い回答）",
+        "descriptive": "記述（文章での回答）",
+        "selection": "選択（記号や番号での回答）",
+    }
+    lines.append("\n# 設問別の期待回答形式")
+    all_ids = []
+    for q in rubric.questions:
+        type_hint = TYPE_HINTS.get(q.question_type, q.question_type)
+        if q.sub_questions:
+            for sq in q.sub_questions:
+                lines.append(f"- 設問ID \"{sq.id}\": {sq.text}（期待: 短い語句）")
+                all_ids.append(sq.id)
+        else:
+            expected = "文章での記述" if q.question_type == "descriptive" else "短い語句"
+            lines.append(f"- 設問ID \"{q.id}\": （{type_hint}、期待: {expected}）")
+            all_ids.append(str(q.id))
+
+    # JSON例
+    example_answers = ",\n    ".join(
+        f'{{"question_id": "{aid}", "transcribed_text": "...", "confidence": "high"}}'
+        for aid in all_ids[:3]
+    )
+    lines.extend([
+        "",
+        "# 回答形式",
+        "以下のJSON形式で回答してください。JSONのみを出力してください。",
+        f"question_id は必ず上記の設問ID（{', '.join(repr(a) for a in all_ids)}）をそのまま使ってください。",
+        "",
+        "```json",
+        "{",
+        '  "student_name": "読み取れた氏名（不明なら空文字）",',
+        '  "answers": [',
+        f"    {example_answers}",
+        '  ]',
+        "}",
+        "```",
+    ])
+    return "\n".join(lines)
+
+
+def parse_layout_result(result: dict) -> dict:
+    """レイアウト分析結果をパース・検証する。Returns: layout dict"""
+    _validate_schema(result, LAYOUT_SCHEMA, context="Layout")
+    return result
+
+
 def parse_ocr_result(
     result: dict, rubric: Rubric,
 ) -> tuple[str, list[OcrAnswer]]:
@@ -512,6 +714,77 @@ def _thinking_budget_for_question(question: Question, base: int = 8192) -> int:
     return base
 
 
+RUBRIC_REVIEW_SYSTEM_PROMPT = """\
+あなたは国語の採点基準レビュー専門AIです。教員が作成した採点基準を分析し、\
+採点時に判断が分かれそうなポイントについて質問を生成します。
+
+目的:
+- 教員が事前に曖昧な基準を明確化できるよう支援する
+- 実際の採点で「AIが迷う」ケースを減らす
+
+質問の観点:
+1. 日常語での言い換えの許容範囲（本文のキーワードをどこまで厳密に要求するか）
+2. 的外れだが何か書いてある場合の部分点の扱い
+3. 独自の表現で概念は正確な場合の評価
+4. 要素間の重み付け（ある要素が欠けていても他が十分なら高得点にするか）
+5. 字数制限の超過・不足への対応
+
+回答形式:
+以下のJSON形式で回答してください。JSONのみを出力してください。
+
+```json
+{
+  "questions": [
+    {
+      "question_id": "対象の設問ID",
+      "aspect": "質問の観点（上記1-5のいずれか）",
+      "sample_answer": "想定されるボーダーライン解答の例",
+      "question": "教員への具体的な質問",
+      "options": ["選択肢A", "選択肢B", "選択肢C"]
+    }
+  ]
+}
+```
+"""
+
+
+def build_rubric_review_prompt(rubric: Rubric) -> str:
+    """採点基準レビュー用プロンプトを構築する。記述式の設問のみ対象。"""
+    lines = [
+        f"# 試験: {rubric.title}",
+        f"満点: {rubric.total_points}点",
+        "",
+    ]
+
+    if rubric.notes:
+        lines.append(f"## 採点上の注意\n{rubric.notes}\n")
+
+    descriptive_count = 0
+    for q in rubric.questions:
+        if q.question_type != "descriptive":
+            continue
+        descriptive_count += 1
+        lines.append(f"\n## 問{q.id}: {q.description}")
+        lines.append(f"- 配点: {q.max_points}点")
+        if q.model_answer:
+            lines.append(f"- 模範解答: {q.model_answer}")
+        if q.scoring_criteria:
+            lines.append(f"- 採点基準:\n{q.scoring_criteria}")
+
+    if descriptive_count == 0:
+        return ""
+
+    lines.extend([
+        "",
+        "## 指示",
+        f"上記の記述式{descriptive_count}問について、採点時に判断が分かれそうなポイントを分析してください。",
+        "各設問について1〜3個の質問を生成してください。",
+        "質問には必ず「こういう解答があった場合」という具体的なサンプル解答を添えてください。",
+    ])
+
+    return "\n".join(lines)
+
+
 def build_horizontal_grading_prompt(
     question: Question,
     rubric_title: str,
@@ -579,7 +852,8 @@ def build_horizontal_grading_prompt(
         score_fmt = (
             '      "scores": [\n'
             '        {"question_id": "小問ID", "score": 得点, "max_points": 配点, '
-            '"comment": "採点根拠", "confidence": "high/medium/low", "needs_review": true/false}\n'
+            '"comment": "採点根拠", "confidence": "high/medium/low", '
+            '"needs_review": true/false, "review_reason": "要確認の場合、具体的な迷いの内容"}\n'
             "      ]"
         )
     else:
@@ -589,7 +863,8 @@ def build_horizontal_grading_prompt(
             f'      "max_points": {question.max_points},\n'
             '      "comment": "採点の根拠",\n'
             '      "confidence": "high/medium/low",\n'
-            '      "needs_review": true/false'
+            '      "needs_review": true/false,\n'
+            '      "review_reason": "needs_reviewがtrueの場合、教員に確認したい具体的な判断ポイント"'
         )
 
     lines.extend([
@@ -672,7 +947,8 @@ def build_verification_prompt(
         '      "score_changed": true/false,',
         '      "verification_comment": "検証コメント（変更理由または妥当と判断した根拠）",',
         '      "confidence": "high/medium/low",',
-        '      "needs_review": true/false',
+        '      "needs_review": true/false,',
+        '      "review_reason": "needs_reviewがtrueの場合、教員に確認したい具体的な判断ポイント"',
         "    }",
         "  ]",
         "}",
@@ -702,6 +978,7 @@ def parse_verification_result(
             "verification_comment": entry.get("verification_comment", ""),
             "confidence": entry.get("confidence", "medium"),
             "needs_review": entry.get("needs_review", False),
+            "review_reason": entry.get("review_reason", ""),
         }
 
     # 欠落学生は needs_review=True でフラグ
@@ -755,6 +1032,7 @@ def parse_horizontal_grading_result(
                     comment=s.get("comment", ""),
                     confidence=s.get("confidence", "medium"),
                     needs_review=s.get("needs_review", False),
+                    review_reason=s.get("review_reason", ""),
                 ))
             scores_by_student[sid] = scores
         else:
@@ -768,6 +1046,7 @@ def parse_horizontal_grading_result(
                 comment=entry.get("comment", ""),
                 confidence=entry.get("confidence", "medium"),
                 needs_review=entry.get("needs_review", False),
+                review_reason=entry.get("review_reason", ""),
             )]
 
     # 欠落学生にプレースホルダー
@@ -812,6 +1091,7 @@ def parse_scoring_result(result: dict) -> tuple[str, list[QuestionScore], str]:
             comment=s.get("comment", ""),
             confidence=s.get("confidence", "medium"),
             needs_review=s.get("needs_review", False),
+            review_reason=s.get("review_reason", ""),
         ))
 
     return student_name, scores, overall_comment
@@ -884,7 +1164,8 @@ def build_single_question_prompt(
         lines.append('      "transcribed_text": "読み取った解答",')
         lines.append('      "comment": "採点根拠",')
         lines.append('      "confidence": "high/medium/low",')
-        lines.append('      "needs_review": true/false')
+        lines.append('      "needs_review": true/false,')
+        lines.append('      "review_reason": "needs_reviewがtrueの場合、教員に確認したい具体的な判断ポイント"')
         lines.append('    }')
         lines.append('  ]')
         lines.append('}')
@@ -901,7 +1182,8 @@ def build_single_question_prompt(
         lines.append('  "transcribed_text": "読み取った解答テキスト",')
         lines.append('  "comment": "採点の根拠や補足",')
         lines.append('  "confidence": "high/medium/low",')
-        lines.append('  "needs_review": true/false')
+        lines.append('  "needs_review": true/false,')
+        lines.append('  "review_reason": "needs_reviewがtrueの場合、教員に確認したい具体的な判断ポイント"')
         lines.append('}')
         lines.append('```')
 
@@ -946,6 +1228,7 @@ def parse_single_question_result(
                 comment=s.get("comment", ""),
                 confidence=s.get("confidence", "medium"),
                 needs_review=s.get("needs_review", False),
+                review_reason=s.get("review_reason", ""),
             ))
     else:
         mp = float(question.max_points)
@@ -958,6 +1241,7 @@ def parse_single_question_result(
             comment=result.get("comment", ""),
             confidence=result.get("confidence", "medium"),
             needs_review=result.get("needs_review", False),
+            review_reason=result.get("review_reason", ""),
         ))
 
     return student_name, scores
@@ -1064,10 +1348,44 @@ def ocr_all_students(
     student_groups: list[list[tuple[int, Image.Image]]],
     rubric: Rubric,
     on_student_ocr: Callable[[int, int], None] | None = None,
+    enable_two_stage: bool = True,
+    on_layout_done: Callable[[dict], None] | None = None,
 ) -> tuple[list[StudentOcr], list[str]]:
-    """Phase 1: 全学生のOCRを実行する。"""
+    """Phase 1: 全学生のOCRを実行する。
+
+    enable_two_stage=True の場合、2段構えOCRを使用する:
+      1回目: 最初の学生の答案でレイアウト構造を分析
+      2回目以降: レイアウト情報を使った空間プロンプトでOCR
+    同一形式の答案群ではレイアウト分析結果をキャッシュし、2人目以降は再分析しない。
+    """
     ocr_results: list[StudentOcr] = []
     errors: list[str] = []
+    layout_cache: dict | None = None
+
+    # 2段構えOCR: 最初の学生でレイアウト分析
+    if enable_two_stage and student_groups:
+        first_images = [img for _, img in student_groups[0]]
+        try:
+            layout_cache = provider.analyze_layout(
+                images=first_images, rubric=rubric
+            )
+            logger.info(
+                "レイアウト分析完了: %s",
+                layout_cache.get("overall_structure", "")[:80],
+            )
+            if on_layout_done:
+                on_layout_done(layout_cache)
+        except NotImplementedError:
+            logger.info(
+                "%s はレイアウト分析に未対応のため、従来方式でOCRを実行します",
+                provider.name,
+            )
+            layout_cache = None
+        except Exception as e:
+            logger.warning(
+                "レイアウト分析に失敗しました（従来方式にフォールバック）: %s", e
+            )
+            layout_cache = None
 
     for i, group in enumerate(student_groups):
         student_num = i + 1
@@ -1080,7 +1398,9 @@ def ocr_all_students(
         page_numbers = [pn for pn, _ in group]
 
         try:
-            result = provider.ocr_student(images=group_images, rubric=rubric)
+            result = provider.ocr_student(
+                images=group_images, rubric=rubric, layout=layout_cache
+            )
             name, answers = parse_ocr_result(result, rubric)
 
             ocr_results.append(StudentOcr(
@@ -1231,10 +1551,14 @@ def verify_question_scores(
                 qs.score = info["verified_score"]
                 qs.comment += f"\n\n【検証結果】得点変更: {info['verification_comment']}"
                 qs.needs_review = True
+                if info.get("review_reason"):
+                    qs.review_reason = info["review_reason"]
             else:
                 qs.comment += "\n\n【検証結果】採点妥当と判断。"
                 if info["needs_review"]:
                     qs.needs_review = True
+                    if info.get("review_reason"):
+                        qs.review_reason = info["review_reason"]
             qs.confidence = info["confidence"]
 
     return errors
@@ -1334,6 +1658,8 @@ def run_horizontal_grading(
                     # 満点の記述式解答は教員確認を推奨
                     if qs.score >= qs.max_points:
                         qs.needs_review = True
+                        if not qs.review_reason:
+                            qs.review_reason = "記述式で満点を付与しました。模範解答と同等の内容か教員確認をお願いします。"
                     # 部分点なのに high は medium に補正
                     if qs.confidence == "high" and 0 < qs.score < qs.max_points:
                         qs.confidence = "medium"
@@ -1498,12 +1824,29 @@ class ScoringProvider(ABC):
             f"{self.__class__.__name__} は設問単位の採点に未対応です"
         )
 
-    def ocr_student(
+    def analyze_layout(
         self,
         images: list[Image.Image],
         rubric: Rubric,
     ) -> dict:
-        """学生の答案画像からテキストのみ読み取る（Phase 1）"""
+        """答案画像のレイアウトを分析する（2段構えOCR Phase 1-1）。
+
+        Returns: レイアウト情報dict（pages, overall_structure）
+        """
+        raise NotImplementedError(
+            f"{self.__class__.__name__} はレイアウト分析に未対応です"
+        )
+
+    def ocr_student(
+        self,
+        images: list[Image.Image],
+        rubric: Rubric,
+        layout: dict | None = None,
+    ) -> dict:
+        """学生の答案画像からテキストのみ読み取る（Phase 1）。
+
+        layout が提供された場合、空間プロンプトを使って精度の高いOCRを行う。
+        """
         raise NotImplementedError(
             f"{self.__class__.__name__} はOCR読み取りに未対応です"
         )
@@ -1533,6 +1876,12 @@ class ScoringProvider(ABC):
             f"{self.__class__.__name__} は採点検証に未対応です"
         )
 
+    def review_rubric(self, rubric: Rubric) -> dict:
+        """採点基準をレビューし、曖昧な点への質問リストを生成する。"""
+        raise NotImplementedError(
+            f"{self.__class__.__name__} は採点基準レビューに未対応です"
+        )
+
     @property
     @abstractmethod
     def name(self) -> str:
@@ -1556,9 +1905,18 @@ class GeminiProvider(ScoringProvider):
 
     def __init__(self, api_key: str, model_name: str = "gemini-3.1-pro-preview"):
         from google import genai
+        from google.genai import types as _types
         self.client = genai.Client(api_key=api_key)
         self.model_name = model_name
         self._rate_limiter = RateLimiter(max_calls=14, window_seconds=60.0)
+        # 文学作品の引用や多様な生徒の回答を正しく処理するため、
+        # 安全フィルタを無効化する（教育目的の採点ツール）
+        self._safety_settings = [
+            _types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="OFF"),
+            _types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="OFF"),
+            _types.SafetySetting(category="HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold="OFF"),
+            _types.SafetySetting(category="HARM_CATEGORY_DANGEROUS_CONTENT", threshold="OFF"),
+        ]
 
     def _call_with_timeout(self, fn):
         """ThreadPoolExecutorでGemini API呼び出しにタイムアウトを設定する"""
@@ -1604,6 +1962,7 @@ class GeminiProvider(ScoringProvider):
                         thinking_config=types.ThinkingConfig(
                             thinking_budget=8192,
                         ),
+                        safety_settings=self._safety_settings,
                     ),
                 )
             )
@@ -1653,6 +2012,7 @@ class GeminiProvider(ScoringProvider):
                         thinking_config=types.ThinkingConfig(
                             thinking_budget=thinking_budget,
                         ),
+                        safety_settings=self._safety_settings,
                     ),
                 )
             )
@@ -1660,10 +2020,46 @@ class GeminiProvider(ScoringProvider):
 
         return _api_call_with_retry(_call)
 
-    def ocr_student(self, images, rubric):
+    def analyze_layout(self, images, rubric):
         from google.genai import types
 
-        prompt = OCR_SYSTEM_PROMPT + "\n\n" + build_ocr_prompt(rubric)
+        prompt = LAYOUT_ANALYSIS_SYSTEM_PROMPT + "\n\n" + build_layout_analysis_prompt(rubric)
+
+        contents = []
+        for i, img in enumerate(images):
+            contents.append(img)
+            if len(images) > 1:
+                contents.append(f"（上記は答案の{i + 1}ページ目です）")
+        contents.append(prompt)
+
+        def _call():
+            self._rate_limiter.wait()
+            response = self._call_with_timeout(
+                lambda: self.client.models.generate_content(
+                    model=self.model_name,
+                    contents=contents,
+                    config=types.GenerateContentConfig(
+                        temperature=0.1,
+                        max_output_tokens=4096,
+                        thinking_config=types.ThinkingConfig(
+                            thinking_budget=4096,
+                        ),
+                        safety_settings=self._safety_settings,
+                    ),
+                )
+            )
+            return _gemini_extract_text(response)
+
+        raw = _api_call_with_retry(_call)
+        return parse_layout_result(raw)
+
+    def ocr_student(self, images, rubric, layout=None):
+        from google.genai import types
+
+        if layout:
+            prompt = OCR_SYSTEM_PROMPT + "\n\n" + build_ocr_prompt_with_layout(rubric, layout)
+        else:
+            prompt = OCR_SYSTEM_PROMPT + "\n\n" + build_ocr_prompt(rubric)
 
         contents = []
         for i, img in enumerate(images):
@@ -1684,6 +2080,7 @@ class GeminiProvider(ScoringProvider):
                         thinking_config=types.ThinkingConfig(
                             thinking_budget=2048,
                         ),
+                        safety_settings=self._safety_settings,
                     ),
                 )
             )
@@ -1722,6 +2119,7 @@ class GeminiProvider(ScoringProvider):
                         thinking_config=types.ThinkingConfig(
                             thinking_budget=thinking_budget,
                         ),
+                        safety_settings=self._safety_settings,
                     ),
                 )
             )
@@ -1759,8 +2157,30 @@ class GeminiProvider(ScoringProvider):
                         thinking_config=types.ThinkingConfig(
                             thinking_budget=thinking_budget,
                         ),
+                        safety_settings=self._safety_settings,
                     ),
                 )
+            )
+            return _gemini_extract_text(response)
+
+        return _api_call_with_retry(_call)
+
+    def review_rubric(self, rubric: Rubric) -> dict:
+        """採点基準をレビューし、曖昧な点への質問リストを生成する。"""
+        prompt_text = build_rubric_review_prompt(rubric)
+        if not prompt_text:
+            return {"questions": []}
+
+        def _call():
+            self._rate_limiter.wait()
+            response = self._client.models.generate_content(
+                model=self._model_id,
+                contents=prompt_text,
+                config=types.GenerateContentConfig(
+                    system_instruction=RUBRIC_REVIEW_SYSTEM_PROMPT,
+                    temperature=0.3,
+                    safety_settings=self._safety_settings,
+                ),
             )
             return _gemini_extract_text(response)
 
@@ -1886,8 +2306,39 @@ class AnthropicProvider(ScoringProvider):
 
         return _api_call_with_retry(_call)
 
-    def ocr_student(self, images, rubric):
-        prompt = build_ocr_prompt(rubric)
+    def analyze_layout(self, images, rubric):
+        prompt = build_layout_analysis_prompt(rubric)
+
+        content = []
+        for i, img in enumerate(images):
+            b64 = image_to_base64(img)
+            content.append({
+                "type": "image",
+                "source": {"type": "base64", "media_type": "image/png", "data": b64},
+            })
+            if len(images) > 1:
+                content.append({"type": "text", "text": f"（上記は答案の{i + 1}ページ目です）"})
+        content.append({"type": "text", "text": prompt})
+
+        def _call():
+            self._rate_limiter.wait()
+            response = self.client.messages.create(
+                model=self.model_name,
+                max_tokens=4096,
+                temperature=0.1,
+                system=LAYOUT_ANALYSIS_SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": content}],
+            )
+            return response.content[0].text
+
+        raw = _api_call_with_retry(_call)
+        return parse_layout_result(raw)
+
+    def ocr_student(self, images, rubric, layout=None):
+        if layout:
+            prompt = build_ocr_prompt_with_layout(rubric, layout)
+        else:
+            prompt = build_ocr_prompt(rubric)
 
         content = []
         for i, img in enumerate(images):
@@ -1961,6 +2412,25 @@ class AnthropicProvider(ScoringProvider):
 
         return _api_call_with_retry(_call)
 
+    def review_rubric(self, rubric: Rubric) -> dict:
+        """採点基準をレビューし、曖昧な点への質問リストを生成する。"""
+        prompt_text = build_rubric_review_prompt(rubric)
+        if not prompt_text:
+            return {"questions": []}
+
+        def _call():
+            self._rate_limiter.wait()
+            response = self._client.messages.create(
+                model=self.model_name,
+                max_tokens=4096,
+                temperature=0.3,
+                system=RUBRIC_REVIEW_SYSTEM_PROMPT,
+                messages=[{"role": "user", "content": [{"type": "text", "text": prompt_text}]}],
+            )
+            return response.content[0].text
+
+        return _api_call_with_retry(_call)
+
 
 # ============================================================
 # デモプロバイダー
@@ -1992,7 +2462,10 @@ class DemoProvider(ScoringProvider):
     ) -> dict:
         return generate_demo_question_score(question, extract_student_name)
 
-    def ocr_student(self, images, rubric):
+    def analyze_layout(self, images, rubric):
+        return generate_demo_layout(rubric)
+
+    def ocr_student(self, images, rubric, layout=None):
         return generate_demo_ocr(rubric)
 
     def grade_question_batch(self, question, rubric_title,
@@ -2002,6 +2475,20 @@ class DemoProvider(ScoringProvider):
     def verify_question_batch(self, question, rubric_title,
                                student_scores_with_answers, notes=""):
         return generate_demo_verification(student_scores_with_answers)
+
+    def review_rubric(self, rubric: Rubric) -> dict:
+        """デモ用の採点基準レビュー結果"""
+        questions = []
+        for q in rubric.questions:
+            if q.question_type == "descriptive":
+                questions.append({
+                    "question_id": str(q.id),
+                    "aspect": "日常語での言い換えの許容範囲",
+                    "sample_answer": "（デモ）本文の概念を日常語で言い換えた解答例",
+                    "question": f"問{q.id}で、本文のキーワードを使わず概念だけ合っている場合、部分点をどの程度与えますか？",
+                    "options": ["キーワード不使用は大幅減点", "概念が合っていれば半分程度の部分点", "概念が正確なら減点なし"],
+                })
+        return {"questions": questions}
 
 
 def generate_demo_verification(
@@ -2114,6 +2601,39 @@ def generate_demo_question_score(question: Question, include_name: bool = False)
         })
 
     return result
+
+
+def generate_demo_layout(rubric: Rubric) -> dict:
+    """デモ用のレイアウト分析結果"""
+    TYPE_SIZES = {
+        "short_answer": "1行分の解答欄",
+        "descriptive": "5行程度の記述欄",
+        "selection": "1行分の選択欄",
+    }
+    regions = []
+    positions = ["上部", "中央上", "中央", "中央下", "下部"]
+    pos_idx = 0
+    for q in rubric.questions:
+        if q.sub_questions:
+            for sq in q.sub_questions:
+                regions.append({
+                    "question_id": sq.id,
+                    "location": f"{positions[pos_idx % len(positions)]}、横書き",
+                    "size_hint": "1行分の解答欄",
+                })
+                pos_idx += 1
+        else:
+            size = TYPE_SIZES.get(q.question_type, "1行分")
+            regions.append({
+                "question_id": str(q.id),
+                "location": f"{positions[pos_idx % len(positions)]}、横書き",
+                "size_hint": size,
+            })
+            pos_idx += 1
+    return {
+        "pages": [{"page_number": 1, "regions": regions}],
+        "overall_structure": f"[デモ] {len(regions)}問の解答欄が1ページに配置",
+    }
 
 
 def generate_demo_ocr(rubric: Rubric) -> dict:

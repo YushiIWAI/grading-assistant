@@ -86,13 +86,14 @@ st.markdown("""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@300;400;500;700&display=swap');
 
-html, body, [class*="st-"]:not(.material-symbols-rounded) {
+html, body, .stApp {
     font-family: 'Noto Sans JP', 'Hiragino Kaku Gothic ProN',
                  'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', sans-serif;
 }
 .material-symbols-rounded,
 [class*="material-symbols"] {
     font-family: "Material Symbols Rounded" !important;
+    font-style: normal !important;
 }
 
 :root {
@@ -474,6 +475,14 @@ with st.sidebar:
     # --- 採点オプション ---
     st.subheader("採点オプション")
     st.checkbox(
+        "2段構えOCR（レイアウト分析＋読み取り）",
+        value=True,
+        key="enable_two_stage_ocr",
+        help="最初の答案でレイアウト（解答欄の位置・構成）を分析し、"
+             "その結果を使って全答案の読み取り精度を向上させます。"
+             "同じ形式の答案が続く場合に特に効果的です。",
+    )
+    st.checkbox(
         "ダブルチェック方式（記述式）",
         value=True,
         key="enable_verification",
@@ -824,6 +833,77 @@ with tab_rubric:
         st.divider()
         r = st.session_state.rubric
         st.success(f"設定済み: 「{r.title}」 {len(r.questions)}問 / {r.total_points}点満点")
+
+        # --- 採点基準レビューフェーズ ---
+        has_descriptive = any(q.question_type == "descriptive" for q in r.questions)
+        if has_descriptive:
+            with st.expander("📋 AIによる採点基準レビュー（推奨）", expanded=False):
+                st.caption(
+                    "AIが採点基準の曖昧な点を分析し、「こういう解答の場合どうしますか？」という質問を生成します。"
+                    "事前に回答しておくと、採点精度が向上します。"
+                )
+
+                if st.button("採点基準をレビューする", key="review_rubric_btn"):
+                    try:
+                        prov = build_provider()
+                        with st.spinner("AIが採点基準を分析中..."):
+                            review_result = prov.review_rubric(r)
+                        st.session_state.rubric_review_questions = review_result.get("questions", [])
+                    except Exception as e:
+                        st.error(f"レビューに失敗しました: {e}")
+
+                if st.session_state.get("rubric_review_questions"):
+                    review_qs = st.session_state.rubric_review_questions
+                    st.markdown(f"**{len(review_qs)}件の確認ポイントが見つかりました。**")
+
+                    for i, rq in enumerate(review_qs):
+                        st.markdown(f"---\n**問{rq.get('question_id', '?')}** — {rq.get('aspect', '')}")
+                        if rq.get("sample_answer"):
+                            st.markdown(f"> 想定解答例: 「{rq['sample_answer']}」")
+                        st.markdown(rq.get("question", ""))
+
+                        options = rq.get("options", [])
+                        if options:
+                            choice = st.radio(
+                                "回答を選択",
+                                options=options,
+                                key=f"rubric_review_{i}",
+                                index=None,
+                            )
+                            st.session_state[f"rubric_review_answer_{i}"] = choice
+                        else:
+                            answer = st.text_input(
+                                "回答を入力",
+                                key=f"rubric_review_{i}",
+                            )
+                            st.session_state[f"rubric_review_answer_{i}"] = answer
+
+                    if st.button("回答を採点基準に反映する", type="primary", key="apply_rubric_review"):
+                        clarifications = []
+                        for i, rq in enumerate(review_qs):
+                            answer = st.session_state.get(f"rubric_review_answer_{i}", "")
+                            if answer:
+                                clarifications.append({
+                                    "question_id": rq.get("question_id", ""),
+                                    "question": rq.get("question", ""),
+                                    "answer": answer,
+                                })
+
+                        # 回答を各設問の scoring_criteria に追記
+                        for cl in clarifications:
+                            for q in r.questions:
+                                if str(q.id) == cl["question_id"]:
+                                    addition = f"\n\n【教員補足】Q: {cl['question']} → A: {cl['answer']}"
+                                    q.scoring_criteria += addition
+                                    break
+
+                        if clarifications:
+                            st.session_state.rubric_review_questions = []
+                            st.success(f"{len(clarifications)}件の補足を採点基準に反映しました。")
+                            st.rerun()
+                        else:
+                            st.warning("回答が入力されていません。")
+
         st.info("**次のステップ →** 「2. 答案の取り込みと仮採点」タブに進んで、答案PDFをアップロードしてください。")
 
 
@@ -962,16 +1042,29 @@ with tab_scoring:
                 total = len(st.session_state.student_groups)
                 progress = st.progress(0)
                 status_text = st.empty()
+                layout_info = st.empty()
+
+                two_stage = st.session_state.get("enable_two_stage_ocr", True)
 
                 def on_ocr_progress(i, total_s):
                     status_text.text(f"読み取り中: 学生 {i + 1}/{total_s}...")
                     progress.progress((i + 1) / total_s)
+
+                def on_layout_done(layout):
+                    layout_info.success(
+                        f"レイアウト分析完了: {layout.get('overall_structure', '')[:60]}"
+                    )
+
+                if two_stage:
+                    status_text.text("レイアウト分析中（最初の答案で構造を認識しています）...")
 
                 ocr_results, errors = ocr_all_students(
                     provider=prov,
                     student_groups=st.session_state.student_groups,
                     rubric=rubric,
                     on_student_ocr=on_ocr_progress,
+                    enable_two_stage=two_stage,
+                    on_layout_done=on_layout_done,
                 )
 
                 session.ocr_results = ocr_results
@@ -1478,6 +1571,9 @@ with tab_review:
                             )
 
                         if qs.needs_review and not qs.reviewed:
+                            if qs.review_reason:
+                                st.warning(f"🔍 **教員確認ポイント:** {qs.review_reason}")
+
                             def _mark_reviewed(q_score, sess):
                                 q_score.reviewed = True
                                 save_session(sess)

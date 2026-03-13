@@ -1,0 +1,781 @@
+{
+  "exam_id": "todai_gendaibun",
+  "exam_title": "現代文（東大型模擬試験）",
+  "source_rubric": "rubrics/todai_rubric.yaml",
+  "description": "石川哲郎「聴くことの倫理――対話における受動性の意味」に基づく東大第一問準拠の模擬試験",
+  "questions": [
+    {
+      "question_id": "1-a",
+      "question_type": "short_answer",
+      "max_points": 2,
+      "description": "対話の（ア）ホンシツは情報交換にはない",
+      "model_answer": "本質"
+    },
+    {
+      "question_id": "1-b",
+      "question_type": "short_answer",
+      "max_points": 2,
+      "description": "他者の言葉を（イ）ジュヨウする",
+      "model_answer": "受容"
+    },
+    {
+      "question_id": "1-c",
+      "question_type": "short_answer",
+      "max_points": 2,
+      "description": "自己の認識の（ウ）ヘンヨウが始まる",
+      "model_answer": "変容"
+    },
+    {
+      "question_id": "2",
+      "question_type": "descriptive",
+      "max_points": 14,
+      "description": "傍線部(ア)「聴くということは、相手の言葉を自分の了解の枠内に回収する営みではなく、むしろ自分の了解の枠組みそのものが揺さぶられる経験である」とはどういうことか、説明せよ。（2行）",
+      "model_answer": "聴くとは相手の発言を自分の既有の理解に当てはめて処理することではなく、相手の言葉のなかに自分の予期を超えた意味を見出すことで、自分自身の認識の前提そのものが問い直される経験だということ。",
+      "scoring_elements": [
+        {
+          "id": "A",
+          "description": "「了解の枠内に回収する＝既有の理解に同化させる」の否定を正確に言い換え",
+          "points": 4
+        },
+        {
+          "id": "B",
+          "description": "「枠組みそのものが揺さぶられる＝認識の前提・理解の枠組み自体が変容する」を説明",
+          "points": 5
+        },
+        {
+          "id": "C",
+          "description": "「予期を超えた意味」「自分の理解を超えたもの」に触れている",
+          "points": 3
+        },
+        {
+          "id": "expr",
+          "description": "文末「〜ということ。」で結び、論理的に一文で構成",
+          "points": 2
+        }
+      ]
+    },
+    {
+      "question_id": "3",
+      "question_type": "descriptive",
+      "max_points": 10,
+      "description": "傍線部(イ)「沈黙は対話の失敗ではなく、対話がもっとも深く成立している瞬間でありうる」のはなぜか、説明せよ。（2行）",
+      "model_answer": "沈黙とは、相手の言葉を十分に受け止めた上で安易にわかったつもりにならず、「わからなさ」にとどまっている状態であり、それこそが他者の他者性を損なわずに向き合う対話の本質的なあり方だから。",
+      "scoring_elements": [
+        {
+          "id": "A",
+          "description": "沈黙＝「わからなさ」にとどまっている状態、安易な理解を拒否",
+          "points": 4
+        },
+        {
+          "id": "B",
+          "description": "他者の他者性を損なわない・尊重する態度",
+          "points": 3
+        },
+        {
+          "id": "C",
+          "description": "対話の本質・核心との結びつき",
+          "points": 2
+        },
+        {
+          "id": "expr",
+          "description": "文末「〜から。」で結んでいる",
+          "points": 1
+        }
+      ]
+    },
+    {
+      "question_id": "4",
+      "question_type": "descriptive",
+      "max_points": 10,
+      "description": "傍線部(ウ)「『わかりやすさ』への志向が、かえって他者との関係を貧しくする」とはどういうことか、説明せよ。（2行）",
+      "model_answer": "相手の言葉を手早く理解可能な形に整理しようとする態度は、言葉に含まれる多義性や曖昧さという他者の固有性の表れを切り捨て、真の出会いの可能性を閉ざしてしまうということ。",
+      "scoring_elements": [
+        {
+          "id": "A",
+          "description": "「わかりやすさ」＝相手の言葉を明瞭な形に整理・還元する態度",
+          "points": 4
+        },
+        {
+          "id": "B",
+          "description": "多義性・曖昧さ＝他者の固有性が切り捨てられること",
+          "points": 4
+        },
+        {
+          "id": "C",
+          "description": "結果として他者との「真の出会い」「深い関係」が不可能になる",
+          "points": 2
+        }
+      ]
+    },
+    {
+      "question_id": "5",
+      "question_type": "descriptive",
+      "max_points": 10,
+      "description": "筆者は「聴くこと」の意義をどのように捉えているか、本文全体の趣旨を踏まえて120字以内で説明せよ。（4行）",
+      "model_answer": "筆者は、聴くことの本質を、相手の言葉を自分の理解の枠組みに取り込むことではなく、自分の理解を超えた他者の言葉の前で立ち止まり、わからなさを引き受けることに見出している。この受動的な態度こそが自己の認識の変容を可能にし、他者と真に出会う対話の条件であると論じている。",
+      "scoring_elements": [
+        {
+          "id": "A",
+          "description": "聴く＝既有の枠組みへの同化ではない（否定面）",
+          "points": 3
+        },
+        {
+          "id": "B",
+          "description": "わからなさにとどまる・受動的態度（肯定面）",
+          "points": 3
+        },
+        {
+          "id": "C",
+          "description": "自己の認識の変容につながる",
+          "points": 2
+        },
+        {
+          "id": "D",
+          "description": "他者との真の出会い・対話の条件であること",
+          "points": 2
+        }
+      ]
+    }
+  ],
+  "test_cases": [
+    {
+      "case_id": "q1a_correct",
+      "question_id": "1-a",
+      "student_answer": "本質",
+      "expected_score": 2,
+      "score_tolerance": 0,
+      "score_level": "full",
+      "expected_elements": [],
+      "tags": [
+        "student_level:all"
+      ],
+      "rationale": "正答",
+      "expected_needs_review": false
+    },
+    {
+      "case_id": "q1a_wrong_similar",
+      "question_id": "1-a",
+      "student_answer": "本室",
+      "expected_score": 0,
+      "score_tolerance": 0,
+      "score_level": "zero",
+      "expected_elements": [],
+      "tags": [
+        "error_type:factual_error",
+        "student_level:struggling"
+      ],
+      "rationale": "似た漢字の混同。「質」→「室」",
+      "expected_needs_review": false
+    },
+    {
+      "case_id": "q1a_blank",
+      "question_id": "1-a",
+      "student_answer": "",
+      "expected_score": 0,
+      "score_tolerance": 0,
+      "score_level": "zero",
+      "expected_elements": [],
+      "tags": [
+        "student_level:minimal"
+      ],
+      "rationale": "空欄",
+      "expected_needs_review": false
+    },
+    {
+      "case_id": "q1b_correct",
+      "question_id": "1-b",
+      "student_answer": "受容",
+      "expected_score": 2,
+      "score_tolerance": 0,
+      "score_level": "full",
+      "expected_elements": [],
+      "tags": [
+        "student_level:all"
+      ],
+      "rationale": "正答",
+      "expected_needs_review": false
+    },
+    {
+      "case_id": "q1b_wrong_homophone",
+      "question_id": "1-b",
+      "student_answer": "需要",
+      "expected_score": 0,
+      "score_tolerance": 0,
+      "score_level": "zero",
+      "expected_elements": [],
+      "tags": [
+        "error_type:factual_error",
+        "student_level:struggling"
+      ],
+      "rationale": "同音異義語の混同。「受容」→「需要」",
+      "expected_needs_review": false
+    },
+    {
+      "case_id": "q1b_wrong_partial",
+      "question_id": "1-b",
+      "student_answer": "受用",
+      "expected_score": 0,
+      "score_tolerance": 0,
+      "score_level": "zero",
+      "expected_elements": [],
+      "tags": [
+        "error_type:factual_error",
+        "student_level:struggling"
+      ],
+      "rationale": "一文字正解だが漢字書き取りは部分点なし",
+      "expected_needs_review": false
+    },
+    {
+      "case_id": "q1c_correct",
+      "question_id": "1-c",
+      "student_answer": "変容",
+      "expected_score": 2,
+      "score_tolerance": 0,
+      "score_level": "full",
+      "expected_elements": [],
+      "tags": [
+        "student_level:all"
+      ],
+      "rationale": "正答",
+      "expected_needs_review": false
+    },
+    {
+      "case_id": "q1c_wrong",
+      "question_id": "1-c",
+      "student_answer": "変用",
+      "expected_score": 0,
+      "score_tolerance": 0,
+      "score_level": "zero",
+      "expected_elements": [],
+      "tags": [
+        "error_type:factual_error",
+        "student_level:struggling"
+      ],
+      "rationale": "「容」→「用」の混同",
+      "expected_needs_review": false
+    },
+    {
+      "case_id": "q1c_wrong_henyou",
+      "question_id": "1-c",
+      "student_answer": "編容",
+      "expected_score": 0,
+      "score_tolerance": 0,
+      "score_level": "zero",
+      "expected_elements": [],
+      "tags": [
+        "error_type:factual_error",
+        "student_level:struggling"
+      ],
+      "rationale": "「変」→「編」の混同。音が近い漢字",
+      "expected_needs_review": false
+    },
+    {
+      "case_id": "q2_full",
+      "question_id": "2",
+      "student_answer": "聴くとは相手の発言を自分の既有の理解に当てはめて処理することではなく、相手の言葉のなかに自分の予期を超えた意味を見出すことで、自己の認識の前提そのものが問い直される経験だということ。",
+      "expected_score": 14,
+      "score_tolerance": 1,
+      "score_level": "full",
+      "expected_elements": [
+        "A",
+        "B",
+        "C",
+        "expr"
+      ],
+      "tags": [
+        "student_level:advanced"
+      ],
+      "rationale": "模範解答とほぼ同等。全要素を正確に含む",
+      "expected_needs_review": false
+    },
+    {
+      "case_id": "q2_high_partial_1",
+      "question_id": "2",
+      "student_answer": "聴くということは相手の言葉をそのまま受け入れることではなく、相手の意見によって自分自身の考え方や物の見方が変化するような体験であるということ。",
+      "expected_score": 6,
+      "score_tolerance": 2,
+      "score_level": "high_partial",
+      "expected_elements": [
+        "B",
+        "expr"
+      ],
+      "tags": [
+        "boundary:upper",
+        "error_type:surface_reword",
+        "student_level:mid"
+      ],
+      "rationale": "Bの方向性は合っているが「了解の枠組み」の概念が不正確。「そのまま受け入れる」はAの言い換えとしてやや不十分。Cへの言及なし",
+      "expected_needs_review": true
+    },
+    {
+      "case_id": "q2_high_partial_2",
+      "question_id": "2",
+      "student_answer": "聴くとは、相手の話を自分の知識や経験の範囲内で解釈するのではなく、自分がこれまで持っていなかった視点に出会い、自己の理解の枠組みが根本から揺らぐ体験だということ。",
+      "expected_score": 12,
+      "score_tolerance": 2,
+      "score_level": "high_partial",
+      "expected_elements": [
+        "A",
+        "B",
+        "C",
+        "expr"
+      ],
+      "tags": [
+        "student_level:advanced",
+        "azabu:true"
+      ],
+      "rationale": "全要素を含むが、Aの「了解の枠内に回収する」の言い換えがやや自由。概念の精度はあるが本文のキーワードの踏まえ方がやや弱い",
+      "expected_needs_review": true
+    },
+    {
+      "case_id": "q2_high_partial_independent",
+      "question_id": "2",
+      "student_answer": "相手の言葉を聴くとは、自分の理解の枠内に相手の言葉を位置づけることではなく、むしろ相手の言葉によって自分の認識の地平が開かれ、これまでの前提が更新される契機となる経験だということ。",
+      "expected_score": 13,
+      "score_tolerance": 1,
+      "score_level": "high_partial",
+      "expected_elements": [
+        "A",
+        "B",
+        "C",
+        "expr"
+      ],
+      "tags": [
+        "student_level:advanced",
+        "azabu:true",
+        "boundary:upper"
+      ],
+      "rationale": "模範解答と異なる言い回しだが概念は正確。「認識の地平が開かれ」は独自表現だが本文の趣旨に合致。高得点だが満点には微妙",
+      "expected_needs_review": true
+    },
+    {
+      "case_id": "q2_low_partial_1",
+      "question_id": "2",
+      "student_answer": "相手の話を聞くときに、自分の知っていることだけで判断するのではなく、新しい考えに触れることで自分の考えが変わることがあるということ。",
+      "expected_score": 5,
+      "score_tolerance": 2,
+      "score_level": "low_partial",
+      "expected_elements": [
+        "B"
+      ],
+      "tags": [
+        "error_type:surface_reword",
+        "student_level:mid",
+        "boundary:lower"
+      ],
+      "rationale": "方向性は合っているが全体的に日常語レベル。「了解の枠組み」「認識の前提」等の概念がすべて平易に読み替えられている",
+      "expected_needs_review": true
+    },
+    {
+      "case_id": "q2_low_partial_2",
+      "question_id": "2",
+      "student_answer": "聴くことは自分の考えを押し付けるのではなく、相手の意見を尊重して受け入れることが大切だということ。",
+      "expected_score": 1,
+      "score_tolerance": 1,
+      "score_level": "low_partial",
+      "expected_elements": [],
+      "tags": [
+        "error_type:surface_reword",
+        "student_level:struggling"
+      ],
+      "rationale": "「コミュニケーション論」への読み替え。本文の哲学的論点（認識の変容）ではなく、一般的な「傾聴」の話にしてしまっている",
+      "expected_needs_review": false
+    },
+    {
+      "case_id": "q2_off_topic",
+      "question_id": "2",
+      "student_answer": "聴くことは相手の話を理解するだけではなく、自分の意見をしっかり持つことも大切だということ。コミュニケーションでは相手の立場に立って考えることが重要である。",
+      "expected_score": 0,
+      "score_tolerance": 1,
+      "score_level": "off_topic",
+      "expected_elements": [],
+      "tags": [
+        "error_type:off_topic",
+        "student_level:struggling"
+      ],
+      "rationale": "本文の趣旨と無関係な一般論。「自分の意見を持つ」は本文の主張と逆方向",
+      "expected_needs_review": false
+    },
+    {
+      "case_id": "q2_zero_short",
+      "question_id": "2",
+      "student_answer": "人の話をちゃんと聞くことが大事だということ。",
+      "expected_score": 1,
+      "score_tolerance": 1,
+      "score_level": "zero",
+      "expected_elements": [],
+      "tags": [
+        "error_type:surface_reword",
+        "student_level:minimal"
+      ],
+      "rationale": "字数極端に不足、内容も一般論レベル",
+      "expected_needs_review": false
+    },
+    {
+      "case_id": "q2_zero_blank",
+      "question_id": "2",
+      "student_answer": "",
+      "expected_score": 0,
+      "score_tolerance": 0,
+      "score_level": "zero",
+      "expected_elements": [],
+      "tags": [
+        "student_level:minimal"
+      ],
+      "rationale": "白紙",
+      "expected_needs_review": false
+    },
+    {
+      "case_id": "q3_full",
+      "question_id": "3",
+      "student_answer": "沈黙とは、相手の言葉を十分に受け止めた上で安易にわかったつもりにならず、「わからなさ」にとどまっている状態であり、それは他者の他者性を損なわずに向き合う対話の核心的な態度だから。",
+      "expected_score": 10,
+      "score_tolerance": 1,
+      "score_level": "full",
+      "expected_elements": [
+        "A",
+        "B",
+        "C",
+        "expr"
+      ],
+      "tags": [
+        "student_level:advanced"
+      ],
+      "rationale": "全要素を正確に含む模範的解答",
+      "expected_needs_review": false
+    },
+    {
+      "case_id": "q3_high_partial_1",
+      "question_id": "3",
+      "student_answer": "沈黙は相手の話が理解できないから黙っているのではなく、相手の言葉を深く受け止めて真剣に考えている状態であり、それこそ対話において相手を尊重している証拠だから。",
+      "expected_score": 7,
+      "score_tolerance": 2,
+      "score_level": "high_partial",
+      "expected_elements": [
+        "A",
+        "C",
+        "expr"
+      ],
+      "tags": [
+        "error_type:surface_reword",
+        "student_level:mid"
+      ],
+      "rationale": "Aの方向性は合っているが「わからなさにとどまる」ではなく「真剣に考えている」と読み替え。Bの「他者性」が「尊重」に一般化",
+      "expected_needs_review": true
+    },
+    {
+      "case_id": "q3_high_partial_boundary",
+      "question_id": "3",
+      "student_answer": "沈黙は、相手の言葉のわからなさを引き受けてそこにとどまっている状態であり、それは安易な理解に走らず他者の他者性を守ることにほかならないから。",
+      "expected_score": 9,
+      "score_tolerance": 1,
+      "score_level": "high_partial",
+      "expected_elements": [
+        "A",
+        "B",
+        "expr"
+      ],
+      "tags": [
+        "boundary:upper",
+        "student_level:advanced",
+        "azabu:true"
+      ],
+      "rationale": "A+Bを正確に押さえているがCの「対話の本質」との結びつきがやや弱い",
+      "expected_needs_review": true
+    },
+    {
+      "case_id": "q3_low_partial_1",
+      "question_id": "3",
+      "student_answer": "沈黙しているとき、人は相手の話をじっくり考えていることがあり、それは対話がうまくいっている状態とも言えるから。",
+      "expected_score": 4,
+      "score_tolerance": 2,
+      "score_level": "low_partial",
+      "expected_elements": [
+        "C",
+        "expr"
+      ],
+      "tags": [
+        "error_type:surface_reword",
+        "student_level:mid"
+      ],
+      "rationale": "大筋の方向性は合っているが「わからなさ」「他者性」の概念が完全に欠落。日常語レベル",
+      "expected_needs_review": true
+    },
+    {
+      "case_id": "q3_low_partial_2",
+      "question_id": "3",
+      "student_answer": "対話では言葉だけでなく沈黙も重要なコミュニケーション手段であり、沈黙によって相手に対する思いやりや敬意を示すことができるから。",
+      "expected_score": 3,
+      "score_tolerance": 2,
+      "score_level": "low_partial",
+      "expected_elements": [
+        "expr"
+      ],
+      "tags": [
+        "error_type:off_topic",
+        "student_level:struggling"
+      ],
+      "rationale": "「コミュニケーション手段」「思いやり」は本文の論点とずれている。文末形式は正しい",
+      "expected_needs_review": false
+    },
+    {
+      "case_id": "q3_zero_short",
+      "question_id": "3",
+      "student_answer": "沈黙にも意味があるから。",
+      "expected_score": 1,
+      "score_tolerance": 1,
+      "score_level": "zero",
+      "expected_elements": [
+        "expr"
+      ],
+      "tags": [
+        "error_type:missing_element",
+        "student_level:minimal"
+      ],
+      "rationale": "文末は正しいが内容が極端に不足",
+      "expected_needs_review": false
+    },
+    {
+      "case_id": "q4_full",
+      "question_id": "4",
+      "student_answer": "相手の発言を手早く理解可能な形に整理しようとすることは、言葉に含まれる多義性や曖昧さという他者の固有性の表れを切り捨てることであり、真の出会いの可能性を閉ざすということ。",
+      "expected_score": 10,
+      "score_tolerance": 1,
+      "score_level": "full",
+      "expected_elements": [
+        "A",
+        "B",
+        "C"
+      ],
+      "tags": [
+        "student_level:advanced"
+      ],
+      "rationale": "全要素を正確に含む",
+      "expected_needs_review": false
+    },
+    {
+      "case_id": "q4_high_partial_1",
+      "question_id": "4",
+      "student_answer": "相手の言葉をすぐにわかりやすく解釈しようとすると、相手が本当に伝えたかった微妙なニュアンスを見落としてしまい、表面的な理解にとどまって深い関係を築けなくなるということ。",
+      "expected_score": 7,
+      "score_tolerance": 2,
+      "score_level": "high_partial",
+      "expected_elements": [
+        "A",
+        "C"
+      ],
+      "tags": [
+        "error_type:surface_reword",
+        "student_level:mid"
+      ],
+      "rationale": "A・Cの方向性は合っているが、Bの「多義性・曖昧さ＝他者の固有性」が「微妙なニュアンス」に一般化",
+      "expected_needs_review": true
+    },
+    {
+      "case_id": "q4_high_partial_independent",
+      "question_id": "4",
+      "student_answer": "相手の言葉を効率的に処理しようとする態度は、言葉の中にある解釈の余地や意味の重層性を捨象し、他者を自分の理解可能な範囲に押し込めてしまうので、対話が表面的な情報交換に堕するということ。",
+      "expected_score": 9,
+      "score_tolerance": 1,
+      "score_level": "high_partial",
+      "expected_elements": [
+        "A",
+        "B",
+        "C"
+      ],
+      "tags": [
+        "student_level:advanced",
+        "azabu:true",
+        "boundary:upper"
+      ],
+      "rationale": "独自の表現だが概念は正確。「意味の重層性」「捨象」等の語彙力が高い。Cの表現がやや異なるが趣旨は合致",
+      "expected_needs_review": true
+    },
+    {
+      "case_id": "q4_low_partial_1",
+      "question_id": "4",
+      "student_answer": "わかりやすさばかりを求めると、相手の複雑な気持ちや考えを単純にしてしまい、相手のことを本当には理解できなくなってしまうこと。",
+      "expected_score": 4,
+      "score_tolerance": 2,
+      "score_level": "low_partial",
+      "expected_elements": [
+        "A"
+      ],
+      "tags": [
+        "error_type:surface_reword",
+        "student_level:mid"
+      ],
+      "rationale": "Aの方向性のみ。「多義性」「固有性」「真の出会い」の概念が日常語に",
+      "expected_needs_review": true
+    },
+    {
+      "case_id": "q4_low_partial_general",
+      "question_id": "4",
+      "student_answer": "難しい話を簡単にしすぎると、大切な内容が伝わらなくなるので、他者との関係に悪影響があるということ。",
+      "expected_score": 2,
+      "score_tolerance": 1,
+      "score_level": "low_partial",
+      "expected_elements": [],
+      "tags": [
+        "error_type:surface_reword",
+        "student_level:struggling"
+      ],
+      "rationale": "一般論レベル。本文の具体的概念への言及が皆無",
+      "expected_needs_review": false
+    },
+    {
+      "case_id": "q4_zero_blank",
+      "question_id": "4",
+      "student_answer": "",
+      "expected_score": 0,
+      "score_tolerance": 0,
+      "score_level": "zero",
+      "expected_elements": [],
+      "tags": [
+        "student_level:minimal"
+      ],
+      "rationale": "白紙",
+      "expected_needs_review": false
+    },
+    {
+      "case_id": "q5_full",
+      "question_id": "5",
+      "student_answer": "筆者は、聴くことの意義を、相手の言葉を自己の了解の枠内に取り込むことではなく、自分の理解を超えた他者の言葉の前に立ち止まり、わからなさを引き受けることに見出している。この受動的な態度こそが自己の認識の変容を可能にし、他者と真に出会う対話の条件であると論じている。",
+      "expected_score": 10,
+      "score_tolerance": 1,
+      "score_level": "full",
+      "expected_elements": [
+        "A",
+        "B",
+        "C",
+        "D"
+      ],
+      "tags": [
+        "student_level:advanced"
+      ],
+      "rationale": "全4要素を網羅。字数も120字以内に収まっている",
+      "expected_needs_review": false
+    },
+    {
+      "case_id": "q5_high_partial_3elem",
+      "question_id": "5",
+      "student_answer": "筆者は、聴くことは相手を理解しようとすることではなく、相手の言葉によって自分の考えが変わることに意味があると捉えている。わかりやすさを求めるのではなく、わからないことに耐えながら向き合う態度が、他者との深い関係を築く上で不可欠だと述べている。",
+      "expected_score": 8,
+      "score_tolerance": 1,
+      "score_level": "high_partial",
+      "expected_elements": [
+        "A",
+        "B",
+        "D"
+      ],
+      "tags": [
+        "student_level:mid"
+      ],
+      "rationale": "A・B・Dを含むがCの「自己の認識の変容」への明示的言及が弱い。「考えが変わる」はCに近いが精度不足",
+      "expected_needs_review": true
+    },
+    {
+      "case_id": "q5_high_partial_imprecise",
+      "question_id": "5",
+      "student_answer": "筆者によれば、聴くことの意義は、自分の既存の理解に安住せず、他者の言葉が持つ未知の意味に開かれることにある。こうした受動的で忍耐強い姿勢をとることで、自分自身の認識が刷新され、他者との間に表面的でない真の交流が生まれると論じている。",
+      "expected_score": 9,
+      "score_tolerance": 1,
+      "score_level": "high_partial",
+      "expected_elements": [
+        "A",
+        "B",
+        "C",
+        "D"
+      ],
+      "tags": [
+        "student_level:advanced",
+        "azabu:true",
+        "boundary:upper"
+      ],
+      "rationale": "4要素すべて含むが独自表現が多い。「認識が刷新」はCの的確な言い換え。満点に近い",
+      "expected_needs_review": true
+    },
+    {
+      "case_id": "q5_low_partial_surface",
+      "question_id": "5",
+      "student_answer": "聴くことは相手の話を受け入れるだけでなく、自分の考えを見直すきっかけになる大切な行為である。現代社会では発信ばかりが重視されるが、聴くことこそ対話の本質であり、他者との関係を豊かにするものだと筆者は主張している。",
+      "expected_score": 5,
+      "score_tolerance": 2,
+      "score_level": "low_partial",
+      "expected_elements": [
+        "A",
+        "D"
+      ],
+      "tags": [
+        "error_type:surface_reword",
+        "student_level:mid"
+      ],
+      "rationale": "方向性は合っているが概念が浅い。「発信ばかりが重視される」は本文にない読み込み。B・Cが不十分",
+      "expected_needs_review": true
+    },
+    {
+      "case_id": "q5_off_topic_opinion",
+      "question_id": "5",
+      "student_answer": "聴くことは人間関係においてとても重要だと筆者は述べている。相手の話をちゃんと聞くことで、相手のことをよく理解でき、良い関係を築くことができる。現代社会ではSNSなどで発信することが多いが、聴くことの大切さを改めて見直すべきだと思った。",
+      "expected_score": 0,
+      "score_tolerance": 1,
+      "score_level": "off_topic",
+      "expected_elements": [],
+      "tags": [
+        "error_type:off_topic",
+        "student_level:struggling"
+      ],
+      "rationale": "本文の哲学的論点を踏まえていない。最後に「思った」と自分の感想になっている。一般的な「傾聴の大切さ」への読み替え",
+      "expected_needs_review": false
+    },
+    {
+      "case_id": "q5_zero_too_short",
+      "question_id": "5",
+      "student_answer": "聴くことは大切だと筆者は言っている。相手の気持ちを考えることが重要だ。",
+      "expected_score": 1,
+      "score_tolerance": 1,
+      "score_level": "zero",
+      "expected_elements": [],
+      "tags": [
+        "error_type:missing_element",
+        "student_level:minimal"
+      ],
+      "rationale": "字数大幅不足（約35字/120字）、内容も一般論レベル",
+      "expected_needs_review": false
+    },
+    {
+      "case_id": "q5_zero_blank",
+      "question_id": "5",
+      "student_answer": "",
+      "expected_score": 0,
+      "score_tolerance": 0,
+      "score_level": "zero",
+      "expected_elements": [],
+      "tags": [
+        "student_level:minimal"
+      ],
+      "rationale": "白紙",
+      "expected_needs_review": false
+    },
+    {
+      "case_id": "q5_format_error_overcount",
+      "question_id": "5",
+      "student_answer": "筆者は、聴くことの本質を、相手の言葉を自分の理解の枠組みに取り込むことではなく、自分の理解を超えた他者の言葉の前で立ち止まり、わからなさを引き受けることに見出している。この受動的な態度こそが自己の認識の変容を可能にし、他者と真に出会う対話の条件であると論じている。しかも筆者は沈黙の価値にも触れ、わかりやすさの追求がかえって他者との関係を貧しくすると指摘している。",
+      "expected_score": 9,
+      "score_tolerance": 1,
+      "score_level": "high_partial",
+      "expected_elements": [
+        "A",
+        "B",
+        "C",
+        "D"
+      ],
+      "tags": [
+        "error_type:format_error",
+        "boundary:upper"
+      ],
+      "rationale": "内容は優秀だが120字を大幅超過（約180字）。採点基準により-1点",
+      "expected_needs_review": true
+    }
+  ]
+}

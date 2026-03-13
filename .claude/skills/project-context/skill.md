@@ -48,32 +48,60 @@ grading-assistant/
 ## 主要モジュール
 
 ### models.py — データモデル
-- `Rubric`: 試験メタデータと問題定義
-- `Question` / `SubQuestion`: 個別問題（配点・解答タイプ）
-- `StudentResult`: 生徒別採点結果
-- `QuestionScore`: 問題別スコア（信頼度・要レビューフラグ付き）
+- `Rubric`: 試験メタデータと問題定義（title, total_points, pages_per_student, questions, notes）
+- `Question` / `SubQuestion`: 個別問題（配点・解答タイプ: short_answer / descriptive / selection）
+- `StudentResult`: 生徒別採点結果（is_reference フラグで教員採点を参考例としてAIに提供可能）
+- `QuestionScore`: 問題別スコア（信頼度・要レビューフラグ・ai_score バックアップ付き）
 - `ScoringSession`: 複数生徒を含む採点セッション全体
-- `StudentOcr`: 手書きOCR結果
+  - `from_dict()` / `to_dict()`: JSON永続化用シリアライズ
+  - `get_reference_students()`: 参考例マーク済み学生の取得
+  - `get_ocr_for_student()` / `get_all_answers_for_question()`: OCRデータアクセス
+  - `ocr_complete()`: 全学生OCR完了判定
+  - `summary()`: 統計サマリー（採点済み数・平均点・要確認数）
+- `StudentOcr` / `OcrAnswer`: 手書きOCR結果（問題別読み取りテキスト・信頼度・手動修正フラグ）
 
 ### scoring_engine.py — 採点エンジン
-- マルチプロバイダ抽象化（Gemini / Claude / Demoモード）
-- キャリブレーション例付き採点プロンプト
-- 手書きOCR（文字認識）
-- バッチ採点（バッチサイズ設定可能）
-- 横断採点モード（複数生徒を一貫した基準で採点）
-- 信頼度トラッキング・要レビューフラグ
-- RateLimiter: スライディングウィンドウ方式（Gemini 14RPM, Anthropic 50RPM）
-- _validate_schema(): AIレスポンスの構造検証（4つのparse関数で使用）
-- _thinking_budget_for_question(): 問題タイプに応じたGemini thinking token調整
-- analyze_batch_calibration(): バッチ間スコア分布の偏り検出
+- **プロバイダ抽象化** (`ScoringProvider` ABC → `GeminiProvider` / `AnthropicProvider` / `DemoProvider`)
+  - GeminiProvider: モデル選択肢 `gemini-3.1-pro-preview`（デフォルト）/ `gemini-2.5-flash` / `gemini-2.5-pro`、120秒タイムアウト（ThreadPoolExecutor）
+  - AnthropicProvider: モデル選択肢 `claude-sonnet-4-20250514`（デフォルト）/ `claude-haiku-4-20250414`、120秒タイムアウト
+  - DemoProvider: API不要のデモ用ダミー採点
+- **RateLimiter**: スライディングウィンドウ方式（Gemini 14RPM, Anthropic 50RPM）
+- **スキーマ検証**: `_validate_schema()` + 8つのスキーマ定数（OCR_SCHEMA, SCORING_SCHEMA, HORIZONTAL_SCHEMA, VERIFICATION_SCHEMA 等）、4つのparse関数で使用
+- **採点モード**:
+  - 設問別採点: `score_student_by_question()` — 1学生ずつ設問単位で採点
+  - 横断採点: `run_horizontal_grading()` → `grade_question_horizontally()` — 全学生を問ごとにバッチ一括採点
+- **ダブルチェック方式**: `verify_question_scores()` — 記述式問題の2パス検証（`VERIFICATION_BATCH_SIZE=10`）
+- **参考例抽出**: `_build_reference_for_question()` — 教員採点済み学生のスコアを設問単位で抽出しAIに提示
+- **ユーティリティ**:
+  - `_extract_json()`: AIレスポンスからJSON修復・抽出
+  - `_api_call_with_retry()`: 全APIコールのリトライ機構
+  - `_thinking_budget_for_question()`: 問題タイプに応じたGemini thinking token調整
+  - `recommend_batch_size()`: ルーブリック内容からバッチサイズ自動推奨
+  - `analyze_batch_calibration()`: バッチ間スコア分布の偏り検出
+- **後処理ルール**: 記述式満点→needs_review=True、部分点でhigh→mediumに補正
+
+### pdf_processor.py — PDF→画像変換・処理
+- `pdf_to_images()`: PDF→PIL Image変換（DPI指定可能、デフォルト200）
+- `split_pages_by_student()`: ページを学生ごとにグループ化（1-indexed）
+- `image_to_base64()`: 画像→Base64変換（API送信用、長辺max_size=1600にリサイズ）
+- `image_to_bytes()`: 画像→bytes変換（Streamlit表示用）
+- `get_pdf_page_count()`: PDFのページ数取得（バリデーション用）
+
+### storage.py — セッション永続化
+- `save_session()` / `load_session()` / `list_sessions()`: JSON形式でのセッション永続化（`data/` ディレクトリ）
+- `export_csv()`: 採点結果をCSV文字列にエクスポート（設問ごとの得点・配点・読取・コメント・確信度・要確認を列に展開）
+- `export_csv_file()`: CSVファイル出力（BOM付きUTF-8でExcel対応、`output/` ディレクトリ）
 
 ### app.py — UI
+- **認証**: `check_password()` — 共通パスワード認証（`st.secrets["password"]`、未設定時はスルー）
+- **ルーブリック管理**: `load_rubric_from_yaml()` / `rubric_to_yaml()` — YAML読み込み・書き出し
+- **プロバイダ構築**: `build_provider()` — session_state の設定からプロバイダを自動選択
 - PDFアップロード・生徒ごとのページ分割
 - ルーブリックビルダー・ローダー（YAML）
-- インタラクティブ採点ワークフロー
-- セッション管理・永続化
-- CSVエクスポート
+- インタラクティブ採点ワークフロー（4タブ構成）
+- セッション管理・永続化・CSVエクスポート
 - API利用に関するプライバシー同意
+- **UI装飾ヘルパー**: `status_badge_html()`, `confidence_badge_html()`, `review_needed_badge_html()`, `progress_ring_html()`（SVG円形進捗リング）
 
 ## 起動方法
 ```bash
@@ -178,3 +206,19 @@ python3 -m streamlit run app.py
 ```bash
 python3 -m pytest tests/ -v
 ```
+
+## 商用化・実用プロダクト化の方針（2026-03-12）
+
+詳細は `productization-roadmap.md` を参照。
+
+要点:
+
+- 現状は「採点精度を改善し続けられる強いプロトタイプ」であり、次の主戦場は精度微調整より信頼基盤
+- 目標は「AIが自動で採点すること」ではなく、「教員が根拠付きで、安全に、短時間で採点を確定できること」
+- 最優先課題は、認証、学校単位のデータ分離、保存基盤、監査ログ、削除設計
+- 現在の Streamlit 一体型構成は pilot には適しているが、商用では UI / API / ワーカー / DB / オブジェクト保存へ分離した方がよい
+- evaluation/ は中核資産であり、今後は OCR 評価、CI 回帰チェック、モデル比較の基盤として強化する
+- 課金や拡販より先に、学校が安心して導入できる運用性と説明可能性を整える
+
+今後のエージェントAIは、商用化や広域導入を前提にした提案をする場合、
+必ず `productization-roadmap.md` を確認してから設計判断を行うこと。

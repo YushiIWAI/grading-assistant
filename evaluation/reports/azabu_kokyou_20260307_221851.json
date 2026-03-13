@@ -1,0 +1,598 @@
+{
+  "exam_id": "azabu_kokyou",
+  "exam_title": "魯迅「故郷」予習プリント（中2国語・定期試験型）",
+  "provider_name": "Gemini (gemini-2.5-flash)",
+  "total_cases": 30,
+  "passed_cases": 30,
+  "pass_rate": 100.0,
+  "elapsed_seconds": 95.1,
+  "errors": [],
+  "results": [
+    {
+      "case_id": "q1_full",
+      "question_id": "1",
+      "expected_score": 4,
+      "actual_score": 4.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "full",
+      "tags": [
+        "student_level:advanced"
+      ],
+      "ai_comment": "要素A「枯れ草や遣れ茎が生えた屋根」と、要素B「直すこともできないほど貧しくなり、一族が没落してしまった」の両方に言及しており、模範解答とほぼ同等の内容です。本文のキーワードを正確に踏まえています。",
+      "rationale": "屋根の荒廃の具体描写と没落の両方を正確に含む",
+      "expected_needs_review": false,
+      "actual_needs_review": true,
+      "review_reason": "満点解答のため、教員による最終確認をお願いします。"
+    },
+    {
+      "case_id": "q1_high_partial",
+      "question_id": "1",
+      "expected_score": 2,
+      "actual_score": 2.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "high_partial",
+      "tags": [
+        "error_type:missing_element",
+        "student_level:mid"
+      ],
+      "ai_comment": "要素B「一族が貧しくなって、家の手入れができないほど落ちぶれてしまった」に言及しており、没落の理由を捉えています（2点）。しかし、要素Aである屋根の具体的な荒廃描写（枯れ草や遣れ茎など）への言及がありません（0点）。",
+      "rationale": "没落・貧しさには触れているが、屋根の枯れ草等の本文の具体的描写（A）への言及がない",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": ""
+    },
+    {
+      "case_id": "q1_low_partial",
+      "question_id": "1",
+      "expected_score": 1,
+      "actual_score": 1.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "low_partial",
+      "tags": [
+        "error_type:surface_reword",
+        "student_level:struggling"
+      ],
+      "ai_comment": "「家が古くなって」という記述は、家の荒廃という概念の方向性は合っていますが、本文の具体的な描写（枯れ草や遣れ茎）に触れておらず、日常語レベルの表面的な言い換えに留まります。また、「住めなくなった」という表現は、貧しさや没落を直接的に説明しているとは言えず、要素Bを満たしていません。部分点の目安「家が古くなった程度」に該当すると判断しました。",
+      "rationale": "家の状態が悪いことには触れているが、没落・貧困という本質的な理由も屋根の具体描写もない",
+      "expected_needs_review": true,
+      "actual_needs_review": false,
+      "review_reason": ""
+    },
+    {
+      "case_id": "q1_off_topic",
+      "question_id": "1",
+      "expected_score": 0,
+      "actual_score": 0.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "off_topic",
+      "tags": [
+        "error_type:off_topic",
+        "student_level:mid"
+      ],
+      "ai_comment": "「家族がよその土地に引っ越すことになったので、家を売ることになった」という解答は、設問の意図（家が荒廃し、一族が没落したため持ち主を変えるほかなかった理由）から完全に外れており、本文の内容に基づいた説明ではありません。的外れな内容のため0点とします。",
+      "rationale": "引っ越し・売却は物語の背景だが、この設問が聞いているのは「持ち主を変えるほかなかった理由」＝家の荒廃と一族の没落。設問の意図を読み違えている",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": ""
+    },
+    {
+      "case_id": "q1_zero_blank",
+      "question_id": "1",
+      "expected_score": 0,
+      "actual_score": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "zero",
+      "tags": [
+        "student_level:minimal"
+      ],
+      "ai_comment": "空欄のため0点とします。",
+      "rationale": "白紙",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": ""
+    },
+    {
+      "case_id": "q2_full",
+      "question_id": "2",
+      "expected_score": 8,
+      "actual_score": 8.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "full",
+      "tags": [
+        "student_level:advanced"
+      ],
+      "ai_comment": "【少年時代】A1「つやのいい丸顔」、A2「銀の首輪をはめ、小さな毛織りの帽子をかぶった」、A3「元気な少年」の全てを満たしています。\n【現在】B1「顔は黄ばんで深いしわが刻まれ」、B2「海辺で長く働いたせいで目の周りが赤く腫れている」、B3「手もひび割れて細くなり」、B4「古びた毛帽子に薄手の綿入れ」、B5「みすぼらしい格好」の全てを満たしており、模範解答とほぼ同等の記述です。",
+      "rationale": "少年時代・現在ともに本文の描写を因果関係を含めて正確に網羅",
+      "expected_needs_review": false,
+      "actual_needs_review": true,
+      "review_reason": "模範解答とほぼ同じ内容で、採点基準の全要素を満たしているため満点としました。教員による最終確認をお願いします。"
+    },
+    {
+      "case_id": "q2_high_partial_youth_weak",
+      "question_id": "2",
+      "expected_score": 6,
+      "actual_score": 6.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "high_partial",
+      "tags": [
+        "error_type:missing_element",
+        "student_level:mid"
+      ],
+      "ai_comment": "【少年時代】A3「元気で健康そうな少年」は満たしていますが、A1「つやのいい丸顔」とA2「銀の首輪・小さな毛織りの帽子」の具体的な描写が不足しています。\n【現在】B1「顔は黄ばんでしわが多く」、B2「海辺で働いたせいか目が赤く腫れ」、B3「手はひび割れている」、B4「古い帽子に薄い綿入れ」、B5「みすぼらしい身なり」の全てを満たしています。",
+      "rationale": "現在の描写は因果を含め詳しいが、少年時代の具体的描写（つやのいい丸顔・首輪・帽子）が欠落",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q2_high_partial_now_weak",
+      "question_id": "2",
+      "expected_score": 4,
+      "actual_score": 4.5,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "high_partial",
+      "tags": [
+        "error_type:missing_element",
+        "student_level:mid"
+      ],
+      "ai_comment": "【少年時代】A1「つやのいい丸い顔」、A2「銀の首輪をはめ、小さな毛織りの帽子をかぶった」、A3「元気な少年」の全てを満たしています。\n【現在】B1「黄ばんだ顔色・深いしわ」を「すっかり老けてやつれ」と日常語で言い換えており、概念は捉えているものの具体的な描写に欠けるため0.5点としました。B5「みすぼらしい格好」は満たしていますが、B2「目の周りが赤く腫れている」、B3「手のひび割れ」、B4「古びた帽子・薄手の綿入れ」の具体的な描写が不足しています。",
+      "rationale": "少年時代は完璧だが、現在の具体的描写（顔色・目・手・服装）が抽象的な印象にとどまる",
+      "expected_needs_review": true,
+      "actual_needs_review": true,
+      "review_reason": "現在の容姿について、B1『黄ばんだ顔色・深いしわ』を『老けてやつれ』と日常語で言い換えているため、部分点0.5点としました。また、B2, B3, B4の具体的な描写が欠けており、B5の全体印象のみで、現在の描写が非常に少ないです。4.5点という採点結果が適切か、教員による判断をお願いします。"
+    },
+    {
+      "case_id": "q2_low_partial",
+      "question_id": "2",
+      "expected_score": 3,
+      "actual_score": 3.5,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "low_partial",
+      "tags": [
+        "error_type:missing_element",
+        "student_level:mid"
+      ],
+      "ai_comment": "【少年時代】A1「丸い顔」、A3「元気で」は満たしていますが、A2「銀の首輪・小さな毛織りの帽子」の具体的な描写が不足しています。\n【現在】B1「黄ばんだ顔色・深いしわ」のうち「しわだらけ」は満たしていますが、「黄ばんだ顔色」の言及がないため0.5点としました。B5「貧しそうな見た目」は満たしていますが、B2「目の周りが赤く腫れている」、B3「手のひび割れ」、B4「古びた帽子・薄手の綿入れ」の具体的な描写が不足しています。",
+      "rationale": "大まかな対比はあるが、装身具・目の腫れ・手のひび割れ・服装など具体描写が大幅に不足",
+      "expected_needs_review": true,
+      "actual_needs_review": true,
+      "review_reason": "現在の容姿について、B1『黄ばんだ顔色・深いしわ』のうち『深いしわ』のみを『しわだらけ』と表現しているため、部分点0.5点としました。少年時代、現在の描写ともに具体性に欠け、全体的に抽象的な表現に留まっています。3.5点という採点結果が適切か、教員による判断をお願いします。"
+    },
+    {
+      "case_id": "q2_low_partial_abstract",
+      "question_id": "2",
+      "expected_score": 1,
+      "actual_score": 1.5,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "low_partial",
+      "tags": [
+        "error_type:missing_element",
+        "student_level:struggling"
+      ],
+      "ai_comment": "【少年時代】A3「昔は元気だった」は満たしていますが、A1「つやのいい丸顔」とA2「銀の首輪・小さな毛織りの帽子」の具体的な描写が不足しています。\n【現在】「今はすっかり年をとってしまった」という非常に抽象的な表現で、本文の具体的な描写が全くありません。B1「黄ばんだ顔色・深いしわ」の概念を日常語レベルで捉えていると判断し、最低限の部分点0.5点としました。その他の要素は満たしていません。",
+      "rationale": "どちらも抽象的な印象のみで、本文の具体的描写への言及がほぼない",
+      "expected_needs_review": false,
+      "actual_needs_review": true,
+      "review_reason": "現在の容姿について、『すっかり年をとってしまった』という非常に抽象的な表現で、本文の具体的な描写が全くありません。B1の『黄ばんだ顔色・深いしわ』の概念を日常語レベルで捉えていると判断し、最低限の部分点0.5点としましたが、より厳しく0点とすべきか教員判断をお願いします。"
+    },
+    {
+      "case_id": "q2_zero_blank",
+      "question_id": "2",
+      "expected_score": 0,
+      "actual_score": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "zero",
+      "tags": [
+        "student_level:minimal"
+      ],
+      "ai_comment": "空欄のため0点とします。",
+      "rationale": "白紙",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q3_full",
+      "question_id": "3",
+      "expected_score": 5,
+      "actual_score": 5.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "full",
+      "tags": [
+        "student_level:advanced"
+      ],
+      "ai_comment": "採点基準の全要素（要素A: 閏土が「旦那様」と呼んだこと、要素B: かつての親しい関係、要素C: 身分の差による関係の変化を悟り悲しくなったこと）を正確に含んでおり、模範解答とほぼ同等の内容です。本文のキーワードや概念を正確に用いた説明ができています。",
+      "rationale": "3要素すべてを正確に含む。比喩表現を使わず具体的に説明できている",
+      "expected_needs_review": false,
+      "actual_needs_review": true,
+      "review_reason": "満点解答のため、教員による最終確認をお願いします。"
+    },
+    {
+      "case_id": "q3_high_partial",
+      "question_id": "3",
+      "expected_score": 4,
+      "actual_score": 4.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "high_partial",
+      "tags": [
+        "error_type:surface_reword",
+        "student_level:mid"
+      ],
+      "ai_comment": "要素A「閏土に「旦那様」と呼ばれたこと」は明確に満たしています（2点）。要素B「かつては身分の差を意識せず親しい関係だったこと」については、「昔のような親しい関係ではなくなった」という表現で、かつての親密さを間接的に示唆していますが、「身分の差を意識せず」という具体的な言及がないため、日常語レベルの言い換えと判断し0.5点としました。要素C「身分の差が二人の関係を変えてしまったことを悟った・悲しい気持ちになった」については、「親しい関係ではなくなったと感じ、悲しくなった」とあり、関係の変化を悟ったことと悲しい気持ちは表現されていますが、「身分の差が関係を変えた」という直接的な因果関係の言及がやや弱いため1.5点としました。",
+      "rationale": "要素は含むが「身分の差」という核心概念が明示されていない。「親しい関係ではなくなった」だけでは理由が不明確",
+      "expected_needs_review": true,
+      "actual_needs_review": true,
+      "review_reason": "要素BとCの記述が本文のキーワードを直接用いたものではなく、日常語レベルの言い換えに留まっているため部分点としました。特に要素Bの0.5点、要素Cの1.5点という判断について、より厳しく採点すべきか教員判断をお願いします。"
+    },
+    {
+      "case_id": "q3_high_partial_no_danna",
+      "question_id": "3",
+      "expected_score": 3,
+      "actual_score": 2.5,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "high_partial",
+      "tags": [
+        "error_type:missing_element",
+        "student_level:mid",
+        "azabu:true"
+      ],
+      "ai_comment": "要素A「閏土が「旦那様」と身分の差をわきまえた呼び方をしたという具体的出来事」への言及が完全に欠落しているため0点としました。要素B「かつては身分の差を意識せず親しい関係だったこと」については、「幼馴染」「昔のように対等な友人ではいられなくなった」という表現で、かつての親しい関係と身分の差を意識しない関係であったことをよく捉えているため1点としました。要素C「身分の差が二人の関係を変えてしまったことを悟った・悲しい気持ちになった」については、「身分の差が生まれ、もう昔のように対等な友人ではいられなくなったと悟った」とあり、関係の変化を悟ったことは表現されていますが、「悲しい気持ちになった」という直接的な心情の言及がないため1.5点としました。",
+      "rationale": "B・Cは的確だが、A（「旦那様」と呼ばれたという具体的出来事）への言及がない",
+      "expected_needs_review": false,
+      "actual_needs_review": true,
+      "review_reason": "要素Aの「旦那様」という具体的なキーワードの欠落が大きく、0点と判断しました。合計2.5点（配点の50%）という点数で適切か、特に要素Aの判断について教員確認をお願いします。"
+    },
+    {
+      "case_id": "q3_low_partial",
+      "question_id": "3",
+      "expected_score": 1,
+      "actual_score": 0.5,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "low_partial",
+      "tags": [
+        "error_type:surface_reword",
+        "student_level:struggling"
+      ],
+      "ai_comment": "要素A「閏土が「旦那様」と身分の差をわきまえた呼び方をしたという具体的出来事」と要素B「かつては身分の差を意識せず親しい関係だったこと」への言及が全くなく、漠然と「閏土が変わってしまった」と述べているため、それぞれ0点としました。要素C「身分の差が二人の関係を変えてしまったことを悟った・悲しい気持ちになった」については、「ショックを受けた」という心情は捉えているものの、その原因が「身分の差」であることや「関係が変わったこと」への具体的な言及が不足しており、日常語レベルの表面的な言い換えに留まるため0.5点としました。",
+      "rationale": "漠然とした記述。「旦那様」「身分の差」など具体的内容がない",
+      "expected_needs_review": false,
+      "actual_needs_review": true,
+      "review_reason": "本文の具体的なキーワードや概念がほとんど含まれておらず、非常に表面的な解答です。0.5点としましたが、設問の意図から大きく外れているため、完全に0点とすべきか教員判断をお願いします。"
+    },
+    {
+      "case_id": "q3_off_topic",
+      "question_id": "3",
+      "expected_score": 0,
+      "actual_score": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "off_topic",
+      "tags": [
+        "error_type:off_topic",
+        "student_level:struggling"
+      ],
+      "ai_comment": "「身震い」という言葉にのみ反応し、本文の内容や設問の意図から完全に外れた、的外れな解答です。形式は守られていますが、内容が的外れなため0点とします。",
+      "rationale": "心理的な「身震い」を物理的な寒さと誤読",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q3_zero_blank",
+      "question_id": "3",
+      "expected_score": 0,
+      "actual_score": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "zero",
+      "tags": [
+        "student_level:minimal"
+      ],
+      "ai_comment": "空欄のため0点とします。",
+      "rationale": "白紙",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q4_full",
+      "question_id": "4",
+      "expected_score": 5,
+      "actual_score": 5.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "full",
+      "tags": [
+        "student_level:advanced"
+      ],
+      "ai_comment": "採点基準の全要素（要素A: 水生と宏児の関係がかつての「私」とルントウの関係と重なること、要素B: 大人たちの関係が身分の差で変わってしまったこと、要素C: 子どもたちの自然な関係に対する感慨）を正確に含み、本文のキーワードも適切に使用しているため満点とします。",
+      "rationale": "子どもたちの関係とかつての自分たちとの重なり、大人の関係の変質、感慨の3要素すべてを含む",
+      "expected_needs_review": false,
+      "actual_needs_review": true,
+      "review_reason": "満点解答のため、教員による最終確認をお願いします。"
+    },
+    {
+      "case_id": "q4_high_partial",
+      "question_id": "4",
+      "expected_score": 4,
+      "actual_score": 4.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "high_partial",
+      "tags": [
+        "error_type:missing_element",
+        "student_level:mid"
+      ],
+      "ai_comment": "要素A「子どもたちが身分の差を気にせず仲良くしているのを見て、かつての自分と閏土もこうだったと思い出し」は満たしています（2点）。要素B「自分たち（大人）の関係は身分の差で変わってしまったことへの言及」は、「かつての自分と閏土もこうだったと思い出し」という表現に留まり、現在の大人たちの関係が身分の差で変化したことへの対比が明確ではないため、部分点（1点）とします。要素C「子どもたちの自然な関係に対する驚き・感慨」は、「胸が熱くなった」という日常語レベルの言い換えですが、方向性は合っているため部分点（1点）とします。",
+      "rationale": "A・Cは含むが、B（大人になった自分たちの関係が身分の差で変わってしまったこと）の明示が不足",
+      "expected_needs_review": true,
+      "actual_needs_review": true,
+      "review_reason": "要素B「自分たち（大人）の関係は身分の差で変わってしまったことへの言及」が間接的な表現に留まるため1点、要素C「胸が熱くなった」が日常語レベルの言い換えであるため1点としました。この部分点の判断について、教員判断をお願いします。"
+    },
+    {
+      "case_id": "q4_high_partial_azabu",
+      "question_id": "4",
+      "expected_score": 5,
+      "actual_score": 5.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "full",
+      "tags": [
+        "student_level:advanced",
+        "azabu:true",
+        "boundary:upper"
+      ],
+      "ai_comment": "採点基準の全要素（要素A: 水生と宏児の関係がかつての「私」とルントウの関係と重なること、要素B: 大人たちの関係が身分の差で変わってしまったこと、要素C: 子どもたちの自然な関係に対する感慨）を正確に含み、本文のキーワードも適切に使用しているため満点とします。",
+      "rationale": "独自表現だが3要素すべて正確。「無邪気な関係」「身分によって疎遠になった現在との落差」が的確",
+      "expected_needs_review": false,
+      "actual_needs_review": true,
+      "review_reason": "満点解答のため、教員による最終確認をお願いします。"
+    },
+    {
+      "case_id": "q4_low_partial",
+      "question_id": "4",
+      "expected_score": 1,
+      "actual_score": 0.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "low_partial",
+      "tags": [
+        "error_type:surface_reword",
+        "student_level:struggling"
+      ],
+      "ai_comment": "子どもたちが仲良くしていること自体は捉えているものの、それが「私」とルントウの関係と重なること（要素A）、大人たちの関係が身分の差で変わってしまったことへの対比（要素B）、そしてそれに対する驚きや感慨（要素C）という、設問の核心部分が全く説明できていません。漠然とした感情表現に留まっているため0点とします。",
+      "rationale": "心情の方向性は合っているが、なぜそう感じたか（かつての関係との重なり・身分の差）の説明がない",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q4_off_topic",
+      "question_id": "4",
+      "expected_score": 0,
+      "actual_score": 0.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "off_topic",
+      "tags": [
+        "error_type:off_topic",
+        "student_level:mid"
+      ],
+      "ai_comment": "閏土の貧困や昔との違いへの衝撃は、本文中の別の場面での「私」の心情であり、設問の「私も、私の母も、はっと胸を突かれた。」の理由としては完全に的外れです。そのため0点とします。",
+      "rationale": "閏土の貧困への衝撃は問三や別の場面の話。この場面は子どもたちの関係が自分たちの過去と重なったことがポイント",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q4_zero_blank",
+      "question_id": "4",
+      "expected_score": 0,
+      "actual_score": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "zero",
+      "tags": [
+        "student_level:minimal"
+      ],
+      "ai_comment": "空欄のため、0点とします。",
+      "rationale": "白紙",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q5_full",
+      "question_id": "5",
+      "expected_score": 6,
+      "actual_score": 6.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "full",
+      "tags": [
+        "student_level:advanced"
+      ],
+      "ai_comment": "採点基準の【要素A】「今の社会ではまだはっきりとはわからない」、【要素B】「多くの人がそれを望み行動し続ければ」、【要素C】「実現できる、新しい社会」の全てを正確に満たしています。模範解答とほぼ同等の内容で、本文のキーワードや概念を正確に用いた説明ができています。文末表現も適切です。",
+      "rationale": "3要素すべてを簡潔かつ正確に含む",
+      "expected_needs_review": false,
+      "actual_needs_review": true,
+      "review_reason": "採点基準の全要素を完璧に満たしており、満点と判断しました。教員による最終確認をお願いします。"
+    },
+    {
+      "case_id": "q5_high_partial",
+      "question_id": "5",
+      "expected_score": 5,
+      "actual_score": 6.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "high_partial",
+      "tags": [
+        "error_type:missing_element",
+        "student_level:mid"
+      ],
+      "ai_comment": "採点基準の【要素A】「道はもともとない」という表現で、現状ではまだ実現していないことを示唆しており満たしています。【要素B】「多くの人が望んで行動すれば」「歩く人が多ければできるように、社会も人々の努力で変わる」で、多くの人の行動を具体的に説明しています。【要素C】「実現できる新しい社会のたとえ」「社会も人々の努力で変わる」で、新しい社会の実現を意味していることを説明しています。本文の比喩を具体的に踏まえた説明ができており、理解が深いです。文末表現も適切です。",
+      "rationale": "B・Cは正確だが、A（今はまだはっきりしていない）の要素が弱い",
+      "expected_needs_review": true,
+      "actual_needs_review": true,
+      "review_reason": "採点基準の全要素を完璧に満たしており、満点と判断しました。特に本文の比喩を具体的に説明している点が優れています。教員による最終確認をお願いします。"
+    },
+    {
+      "case_id": "q5_high_partial_azabu",
+      "question_id": "5",
+      "expected_score": 6,
+      "actual_score": 6.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "full",
+      "tags": [
+        "student_level:advanced",
+        "azabu:true",
+        "boundary:upper"
+      ],
+      "ai_comment": "採点基準の【要素A】「まだ誰も見たことのない」で、現状ではまだ実現していないことを示しています。【要素B】「多くの人が同じ方向を目指して歩み続けることで」で、多くの人の行動を説明しています。【要素C】「理想の社会であり」「初めて形になるもの」で、新しい社会の実現を意味していることを説明しています。「理想の社会」という表現は「新しい社会」と概念的に一致すると判断しました。文末表現も適切です。",
+      "rationale": "独自表現だが3要素すべて含む。「まだ誰も見たことのない」がAに対応",
+      "expected_needs_review": false,
+      "actual_needs_review": true,
+      "review_reason": "採点基準の全要素を完璧に満たしており、満点と判断しました。「理想の社会」という表現は「新しい社会」と概念的に一致すると判断しましたが、教員による最終確認をお願いします。"
+    },
+    {
+      "case_id": "q5_low_partial_surface",
+      "question_id": "5",
+      "expected_score": 2,
+      "actual_score": 1.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "low_partial",
+      "tags": [
+        "error_type:surface_reword",
+        "student_level:mid"
+      ],
+      "ai_comment": "採点基準の【要素A】「今はまだはっきりしていない／実現していない」への言及がありません（0点）。【要素B】「道は歩く人が多くなればできるものだから、みんなで頑張ればいい」という記述は、多くの人の行動を日常語レベルで言い換えていますが、比喩の一部は捉えているため部分点としました（1点）。【要素C】「新しい社会の実現」への言及がありません（0点）。文末表現は適切です。",
+      "rationale": "道の比喩の仕組みには触れているが「新しい社会」という具体的な意味の読み取りがなく、「頑張ればいい」と日常語化",
+      "expected_needs_review": false,
+      "actual_needs_review": true,
+      "review_reason": "要素B「多くの人が望み行動すること」について、「みんなで頑張ればいい」と日常語レベルの言い換えに留まっているため、2点中1点としました。また、要素AとCが欠落しているため合計1点としましたが、この部分点の判断について教員確認をお願いします。"
+    },
+    {
+      "case_id": "q5_low_partial_hope_only",
+      "question_id": "5",
+      "expected_score": 1,
+      "actual_score": 0.0,
+      "tolerance": 1,
+      "passed": true,
+      "score_level": "low_partial",
+      "tags": [
+        "error_type:missing_element",
+        "student_level:struggling"
+      ],
+      "ai_comment": "「希望」という言葉は本文のテーマと関連しますが、設問が求める「どのようなものか」という具体的な説明になっていません。採点基準の注意書き「単に『希望のたとえ』だけでは不十分。『新しい社会』の実現という具体的意味が必要」に該当するため、採点基準の各要素を満たしていません。文末表現は適切ですが、内容が的外れなため加点しません。",
+      "rationale": "希望という語は本文にあるが、「新しい社会」への読み替えができておらず、B・Cの説明もない。「大切だ」は本文の趣旨ではない",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q5_off_topic",
+      "question_id": "5",
+      "expected_score": 0,
+      "actual_score": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "off_topic",
+      "tags": [
+        "error_type:off_topic",
+        "student_level:struggling"
+      ],
+      "ai_comment": "「故郷に続く物理的な道」と解釈しており、採点基準の注意書き「『故郷に続く物理的な道』と解釈した場合は0点」に該当します。設問の意図から完全に外れた内容です。文末表現は適切ですが、内容が的外れなため加点しません。",
+      "rationale": "比喩を文字通りに誤読。「地上の道」を物理的な道路と解釈している",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    },
+    {
+      "case_id": "q5_zero_blank",
+      "question_id": "5",
+      "expected_score": 0,
+      "actual_score": 0.0,
+      "tolerance": 0,
+      "passed": true,
+      "score_level": "zero",
+      "tags": [
+        "student_level:minimal"
+      ],
+      "ai_comment": "空欄のため0点です。",
+      "rationale": "白紙",
+      "expected_needs_review": false,
+      "actual_needs_review": false,
+      "review_reason": null
+    }
+  ],
+  "by_question": {
+    "1": {
+      "total": 5,
+      "passed": 5
+    },
+    "2": {
+      "total": 6,
+      "passed": 6
+    },
+    "3": {
+      "total": 6,
+      "passed": 6
+    },
+    "4": {
+      "total": 6,
+      "passed": 6
+    },
+    "5": {
+      "total": 7,
+      "passed": 7
+    }
+  },
+  "by_score_level": {
+    "full": {
+      "total": 7,
+      "passed": 7
+    },
+    "high_partial": {
+      "total": 7,
+      "passed": 7
+    },
+    "low_partial": {
+      "total": 7,
+      "passed": 7
+    },
+    "off_topic": {
+      "total": 4,
+      "passed": 4
+    },
+    "zero": {
+      "total": 5,
+      "passed": 5
+    }
+  },
+  "needs_review_metrics": {
+    "tp": 5,
+    "fp": 11,
+    "fn": 1,
+    "tn": 13,
+    "precision": 0.312,
+    "recall": 0.833,
+    "f1": 0.455
+  }
+}
