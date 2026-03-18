@@ -5,7 +5,15 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field, asdict
 from datetime import datetime
+from enum import Enum
 from typing import Optional
+
+
+class SubmissionType(str, Enum):
+    """提出形式: 手書き答案か電子データか"""
+    TYPED = "typed"           # 電子データ（タイプ入力、Google Classroom等）
+    HANDWRITTEN = "handwritten"  # 手書き答案（スキャンPDF）
+    CSV = "csv"               # Google Forms 回答CSVからの取り込み
 
 
 @dataclass
@@ -32,6 +40,7 @@ class User:
     mfa_secret: Optional[str] = None
     mfa_enabled: bool = False
     mfa_backup_codes: Optional[str] = None  # JSON文字列: ["code1", "code2", ...]
+    token_invalidated_at: Optional[str] = None  # トークン一括失効用タイムスタンプ
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = ""
 

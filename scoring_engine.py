@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 
 from models import (
     OcrAnswer, Question, QuestionScore, Rubric,
-    ScoringSession, StudentOcr, StudentResult,
+    ScoringSession, StudentOcr, StudentResult, SubmissionType,
 )
 from pdf_processor import (
     PrivacyMaskConfig,
@@ -126,6 +126,7 @@ LAYOUT_REGION_SCHEMA = {
     "question_id": {"required": True, "type": (str, int)},
     "location": {"required": True, "type": str},
     "size_hint": {"required": False, "type": str},
+    "bbox": {"required": False, "type": list},
 }
 
 LAYOUT_PAGE_SCHEMA = {
@@ -360,21 +361,35 @@ def build_scoring_prompt(
     return "\n".join(lines)
 
 
-def _extract_json(text: str | None) -> dict:
+def _extract_json(text) -> dict:
     """レスポンステキストからJSONを抽出する（修復ロジック付き）"""
     if text is None:
         raise ValueError(
             "APIからの応答テキストが空です。"
             "思考トークンで出力上限に達した可能性があります。"
         )
+    # 既にdictの場合はそのまま返す
+    if isinstance(text, dict):
+        return text
+    if isinstance(text, list):
+        if len(text) == 0:
+            raise ValueError("APIが空のJSON配列を返しました。")
+        return text[0] if isinstance(text[0], dict) else text
     # コードブロックからJSON部分を抽出
     if "```json" in text:
         start = text.index("```json") + 7
-        end = text.index("```", start)
+        # 閉じの ``` がない場合は末尾まで使う
+        try:
+            end = text.index("```", start)
+        except ValueError:
+            end = len(text)
         text = text[start:end].strip()
     elif "```" in text:
         start = text.index("```") + 3
-        end = text.index("```", start)
+        try:
+            end = text.index("```", start)
+        except ValueError:
+            end = len(text)
         text = text[start:end].strip()
 
     # まず素直にパース
@@ -391,7 +406,21 @@ def _extract_json(text: str | None) -> dict:
             fixed = fixed[: cut_pos + 1]
         # 末尾カンマ除去 (,} や ,] のパターン)
         fixed = re.sub(r",\s*([}\]])", r"\1", fixed)
-        parsed = json.loads(fixed)  # これでもダメならそのまま例外
+        try:
+            parsed = json.loads(fixed)
+        except json.JSONDecodeError:
+            # 出力切れ対策: 未閉じの文字列・配列・オブジェクトを閉じて再試行
+            patched = fixed
+            # 未閉じの文字列を閉じる
+            patched = patched.rstrip()
+            if patched.count('"') % 2 == 1:
+                patched += '"'
+            # 閉じ括弧を補完
+            open_braces = patched.count("{") - patched.count("}")
+            open_brackets = patched.count("[") - patched.count("]")
+            patched += "]" * max(0, open_brackets) + "}" * max(0, open_braces)
+            patched = re.sub(r",\s*([}\]])", r"\1", patched)
+            parsed = json.loads(patched)  # これでもダメならそのまま例外
 
     # APIがリスト形式で返した場合、最初の要素を取得
     if isinstance(parsed, list):
@@ -408,12 +437,19 @@ def _api_call_with_retry(api_fn, max_retries: int = 2, delay: float = 2.0):
     戻り値: パース済みdict
     """
     last_error = None
+    last_raw = None
     for attempt in range(max_retries + 1):
         try:
             response_text = api_fn()
+            last_raw = response_text
             return _extract_json(response_text)
         except (json.JSONDecodeError, ValueError) as e:
             last_error = e
+            logger.warning(
+                "JSON解析失敗 (attempt %d/%d): %s\n--- raw response (first 1000 chars) ---\n%s",
+                attempt + 1, max_retries + 1, e,
+                str(last_raw)[:1000] if last_raw else "(empty)",
+            )
             if attempt < max_retries:
                 time.sleep(delay * (attempt + 1))
                 continue
@@ -523,7 +559,7 @@ def build_layout_analysis_prompt(rubric: Rubric) -> str:
 
     # レスポンス例
     example_regions = ",\n      ".join(
-        f'{{"question_id": "{aid}", "location": "...", "size_hint": "..."}}'
+        f'{{"question_id": "{aid}", "location": "...", "size_hint": "...", "bbox": [0.1, 0.2, 0.9, 0.4]}}'
         for aid in all_ids[:2]
     )
     lines.extend([
@@ -534,6 +570,8 @@ def build_layout_analysis_prompt(rubric: Rubric) -> str:
         "各解答欄について:",
         "- location: ページ内の位置を具体的に記述（例: 「上部、横書き」「中央やや右、縦書き」）",
         "- size_hint: 解答欄の大きさの目安（例: 「1行分」「5行程度の記述欄」「10cm×15cm程度の大きな枠」）",
+        "- bbox: 解答欄の矩形座標 [x_min, y_min, x_max, y_max]（0.0~1.0の正規化座標、左上が原点）。"
+        "解答欄の枠線を基準に、文字が書かれている領域を含むようにしてください。",
         "",
         "```json",
         "{",
@@ -556,6 +594,7 @@ def build_ocr_prompt_with_layout(
     rubric: Rubric,
     layout: dict,
     include_student_name: bool = True,
+    has_region_crops: bool = False,
 ) -> str:
     """空間プロンプト付きOCR用プロンプト: レイアウト分析結果を踏まえて読み取る（Phase 1-2）"""
     lines = [
@@ -589,6 +628,13 @@ def build_ocr_prompt_with_layout(
         "上記のレイアウト情報を参考に、各解答欄の位置に焦点を当てて読み取ってください。",
         "解答欄の外にあるメモ・落書き・汚れは無視してください。",
     ])
+    if has_region_crops:
+        lines.extend([
+            "",
+            "**重要**: 各解答欄の拡大画像も添付されています。",
+            "拡大画像を優先して文字を読み取ってください。全体画像は文脈確認のみに使用してください。",
+            "拡大画像のほうが文字が大きく鮮明なため、より正確な読み取りが可能です。",
+        ])
 
     # 設問タイプのヒント
     TYPE_HINTS = {
@@ -1484,6 +1530,7 @@ def ocr_all_students(
     on_student_ocr: Callable[[int, int], None] | None = None,
     enable_two_stage: bool = True,
     on_layout_done: Callable[[dict], None] | None = None,
+    submission_type: str = SubmissionType.HANDWRITTEN,
 ) -> tuple[list[StudentOcr], list[str]]:
     """Phase 1: 全学生のOCRを実行する。
 
@@ -1491,10 +1538,18 @@ def ocr_all_students(
       1回目: 最初の学生の答案でレイアウト構造を分析
       2回目以降: レイアウト情報を使った空間プロンプトでOCR
     同一形式の答案群ではレイアウト分析結果をキャッシュし、2人目以降は再分析しない。
+
+    submission_type="typed" の場合、2段構えOCRを自動的にスキップし、
+    軽量な処理パスを使用する（高速化）。
     """
     ocr_results: list[StudentOcr] = []
     errors: list[str] = []
     layout_cache: dict | None = None
+
+    # typed の場合は2段構えOCRをスキップ（レイアウト分析不要）
+    if submission_type == SubmissionType.TYPED:
+        enable_two_stage = False
+        logger.info("電子データ（typed）モード: 軽量OCRパスを使用します")
 
     # 2段構えOCR: 最初の学生でレイアウト分析
     if enable_two_stage and student_groups:
@@ -1533,7 +1588,8 @@ def ocr_all_students(
 
         try:
             result = provider.ocr_student(
-                images=group_images, rubric=rubric, layout=layout_cache
+                images=group_images, rubric=rubric, layout=layout_cache,
+                submission_type=submission_type,
             )
             name, answers = parse_ocr_result(result, rubric)
 
@@ -1988,10 +2044,12 @@ class ScoringProvider(ABC):
         images: list[Image.Image],
         rubric: Rubric,
         layout: dict | None = None,
+        submission_type: str = SubmissionType.HANDWRITTEN,
     ) -> dict:
         """学生の答案画像からテキストのみ読み取る（Phase 1）。
 
         layout が提供された場合、空間プロンプトを使って精度の高いOCRを行う。
+        submission_type="typed" の場合、thinking無効化・トークン削減で高速処理する。
         """
         raise NotImplementedError(
             f"{self.__class__.__name__} はOCR読み取りに未対応です"
@@ -2047,7 +2105,7 @@ class GeminiProvider(ScoringProvider):
         "gemini-2.5-flash": "Gemini 2.5 Flash（高速・低コスト）",
     }
 
-    TIMEOUT = 120  # seconds
+    TIMEOUT = 180  # seconds
 
     def __init__(
         self,
@@ -2210,43 +2268,100 @@ class GeminiProvider(ScoringProvider):
         raw = _api_call_with_retry(_call)
         return parse_layout_result(raw)
 
-    def ocr_student(self, images, rubric, layout=None):
+    def ocr_student(self, images, rubric, layout=None,
+                    submission_type=SubmissionType.HANDWRITTEN):
         from google.genai import types
+        from pdf_processor import crop_regions_from_image
 
-        if layout:
+        is_typed = submission_type == SubmissionType.TYPED
+        prepared_images = self._prepare_images_for_external_ai(images)
+
+        # typed の場合はクロップ処理をスキップ
+        region_crops: list[tuple[str, Image.Image]] = []
+        if layout and not is_typed:
+            for page_info in layout.get("pages", []):
+                page_num = page_info.get("page_number", 1)
+                page_idx = page_num - 1
+                if 0 <= page_idx < len(prepared_images):
+                    page_img = prepared_images[page_idx]
+                    if isinstance(page_img, Image.Image):
+                        crops = crop_regions_from_image(page_img, page_info.get("regions", []))
+                        region_crops.extend(crops)
+
+        # クロップが小さすぎる場合（各クロップがページ面積の5%未満）は使わない
+        if region_crops and prepared_images and isinstance(prepared_images[0], Image.Image):
+            page_area = prepared_images[0].size[0] * prepared_images[0].size[1]
+            min_area = page_area * 0.05
+            if all(c.size[0] * c.size[1] < min_area for _, c in region_crops):
+                logger.warning("クロップ画像が小さすぎるためスキップします（bbox精度不足）")
+                region_crops = []
+
+        has_crops = len(region_crops) > 0
+
+        if layout and not is_typed:
             prompt = OCR_SYSTEM_PROMPT + "\n\n" + build_ocr_prompt_with_layout(
                 rubric,
                 layout,
                 include_student_name=self._student_name_visible_to_model(),
+                has_region_crops=has_crops,
             )
         else:
             prompt = OCR_SYSTEM_PROMPT + "\n\n" + build_ocr_prompt(
                 rubric,
                 include_student_name=self._student_name_visible_to_model(),
             )
-        prepared_images = self._prepare_images_for_external_ai(images)
+
+        # typed: API負荷軽減のため画像をリサイズ
+        if is_typed:
+            resized_images = []
+            for img in prepared_images:
+                if isinstance(img, Image.Image):
+                    max_dim = 1200
+                    w, h = img.size
+                    if max(w, h) > max_dim:
+                        ratio = max_dim / max(w, h)
+                        img = img.resize(
+                            (int(w * ratio), int(h * ratio)), Image.LANCZOS
+                        )
+                resized_images.append(img)
+            prepared_images = resized_images
 
         contents = []
         for i, img in enumerate(prepared_images):
             contents.append(img)
             if len(prepared_images) > 1:
                 contents.append(f"（上記は答案の{i + 1}ページ目です）")
+
+        # クロップ画像を追加（handwritten のみ）
+        for qid, crop_img in region_crops:
+            contents.append(crop_img)
+            contents.append(f"（上記は設問{qid}の解答欄の拡大画像です）")
+
         contents.append(prompt)
+
+        # typed: thinking無効・トークン削減で高速化
+        if is_typed:
+            output_tokens = 4096
+            thinking_budget = 0
+        else:
+            output_tokens = 16384 if has_crops else 8192
+            thinking_budget = 4096 if has_crops else 2048
 
         def _call():
             self._rate_limiter.wait()
+            config_kwargs = dict(
+                temperature=0.1,
+                max_output_tokens=output_tokens,
+                safety_settings=self._safety_settings,
+                thinking_config=types.ThinkingConfig(
+                    thinking_budget=thinking_budget,
+                ),
+            )
             response = self._call_with_timeout(
                 lambda: self.client.models.generate_content(
                     model=self.model_name,
                     contents=contents,
-                    config=types.GenerateContentConfig(
-                        temperature=0.1,
-                        max_output_tokens=4096,
-                        thinking_config=types.ThinkingConfig(
-                            thinking_budget=2048,
-                        ),
-                        safety_settings=self._safety_settings,
-                    ),
+                    config=types.GenerateContentConfig(**config_kwargs),
                 )
             )
             return _gemini_extract_text(response)
@@ -2543,29 +2658,70 @@ class AnthropicProvider(ScoringProvider):
         raw = _api_call_with_retry(_call)
         return parse_layout_result(raw)
 
-    def ocr_student(self, images, rubric, layout=None):
-        if layout:
+    def ocr_student(self, images, rubric, layout=None,
+                    submission_type=SubmissionType.HANDWRITTEN):
+        from pdf_processor import crop_regions_from_image
+
+        is_typed = submission_type == SubmissionType.TYPED
+        prepared_images = self._prepare_images_for_external_ai(images)
+
+        # typed の場合はクロップ処理をスキップ
+        region_crops: list[tuple[str, Image.Image]] = []
+        if layout and not is_typed:
+            for page_info in layout.get("pages", []):
+                page_num = page_info.get("page_number", 1)
+                page_idx = page_num - 1
+                if 0 <= page_idx < len(prepared_images):
+                    page_img = prepared_images[page_idx]
+                    if isinstance(page_img, Image.Image):
+                        crops = crop_regions_from_image(page_img, page_info.get("regions", []))
+                        region_crops.extend(crops)
+
+        # クロップが小さすぎる場合はスキップ
+        if region_crops and prepared_images and isinstance(prepared_images[0], Image.Image):
+            page_area = prepared_images[0].size[0] * prepared_images[0].size[1]
+            min_area = page_area * 0.05
+            if all(c.size[0] * c.size[1] < min_area for _, c in region_crops):
+                logger.warning("クロップ画像が小さすぎるためスキップします（bbox精度不足）")
+                region_crops = []
+
+        has_crops = len(region_crops) > 0
+
+        if layout and not is_typed:
             prompt = build_ocr_prompt_with_layout(
                 rubric,
                 layout,
                 include_student_name=self._student_name_visible_to_model(),
+                has_region_crops=has_crops,
             )
         else:
             prompt = build_ocr_prompt(
                 rubric,
                 include_student_name=self._student_name_visible_to_model(),
             )
-        prepared_images = self._prepare_images_for_external_ai(images)
+
+        # typed: 画像サイズを小さくしてAPI負荷軽減
+        b64_max_size = 1200 if is_typed else 1600
 
         content = []
         for i, img in enumerate(prepared_images):
-            b64 = image_to_base64(img)
+            b64 = image_to_base64(img, max_size=b64_max_size)
             content.append({
                 "type": "image",
                 "source": {"type": "base64", "media_type": "image/png", "data": b64},
             })
             if len(prepared_images) > 1:
                 content.append({"type": "text", "text": f"（上記は答案の{i + 1}ページ目です）"})
+
+        # クロップ画像を追加（handwritten のみ）
+        for qid, crop_img in region_crops:
+            b64 = image_to_base64(crop_img)
+            content.append({
+                "type": "image",
+                "source": {"type": "base64", "media_type": "image/png", "data": b64},
+            })
+            content.append({"type": "text", "text": f"（上記は設問{qid}の解答欄の拡大画像です）"})
+
         content.append({"type": "text", "text": prompt})
 
         def _call():
@@ -2637,7 +2793,7 @@ class AnthropicProvider(ScoringProvider):
 
         def _call():
             self._rate_limiter.wait()
-            response = self._client.messages.create(
+            response = self.client.messages.create(
                 model=self.model_name,
                 max_tokens=4096,
                 temperature=0.3,
@@ -2660,7 +2816,7 @@ class AnthropicProvider(ScoringProvider):
 
         def _call():
             self._rate_limiter.wait()
-            response = self._client.messages.create(
+            response = self.client.messages.create(
                 model=self.model_name,
                 max_tokens=4096,
                 temperature=0.3,
@@ -2708,7 +2864,8 @@ class DemoProvider(ScoringProvider):
     def analyze_layout(self, images, rubric):
         return generate_demo_layout(rubric)
 
-    def ocr_student(self, images, rubric, layout=None):
+    def ocr_student(self, images, rubric, layout=None,
+                    submission_type=SubmissionType.HANDWRITTEN):
         return generate_demo_ocr(rubric)
 
     def grade_question_batch(self, question, rubric_title,

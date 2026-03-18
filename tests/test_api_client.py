@@ -139,3 +139,43 @@ def test_rubric_to_yaml_rejects_empty_response(sample_rubric, monkeypatch):
 
     with pytest.raises(api_client.ApiClientError, match="生成結果が空"):
         api_client.rubric_to_yaml(sample_rubric)
+
+
+class TestApiClientMfa:
+    """api_client の MFA 関連メソッド"""
+
+    def test_mfa_verify_success(self, test_db, test_user, monkeypatch):
+        """mfa_verify が正常にトークンを返す"""
+        monkeypatch.delenv("GRADING_API_BASE_URL", raising=False)
+        from auth import generate_mfa_secret, create_mfa_pending_token
+        import pyotp
+
+        secret = generate_mfa_secret()
+        storage.setup_mfa(test_user.id, secret)
+        storage.enable_mfa(test_user.id)
+
+        mfa_token = create_mfa_pending_token(test_user.id)
+        totp = pyotp.TOTP(secret)
+        result = api_client.mfa_verify(mfa_token, totp.now())
+        assert "access_token" in result
+        assert "refresh_token" in result
+
+    def test_mfa_verify_wrong_code(self, test_db, test_user, monkeypatch):
+        """mfa_verify が不正なコードで ApiClientError を送出する"""
+        monkeypatch.delenv("GRADING_API_BASE_URL", raising=False)
+        from auth import generate_mfa_secret, create_mfa_pending_token
+
+        secret = generate_mfa_secret()
+        storage.setup_mfa(test_user.id, secret)
+        storage.enable_mfa(test_user.id)
+
+        mfa_token = create_mfa_pending_token(test_user.id)
+        with pytest.raises(api_client.ApiClientError):
+            api_client.mfa_verify(mfa_token, "000000")
+
+    def test_change_password_via_client(self, test_db, test_user, monkeypatch):
+        """change_password がパスワードを変更する"""
+        monkeypatch.delenv("GRADING_API_BASE_URL", raising=False)
+        _set_auth_for_api_client(test_user)
+        result = api_client.change_password("testpassword", "new_secure_pass")
+        assert "変更しました" in result["message"]

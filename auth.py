@@ -12,7 +12,9 @@ import bcrypt
 import jwt
 import pyotp
 
-JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "dev-secret-do-not-use-in-production")
+from config import _get_jwt_secret
+
+JWT_SECRET_KEY = _get_jwt_secret()
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("JWT_ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 REFRESH_TOKEN_EXPIRE_DAYS = int(os.environ.get("JWT_REFRESH_TOKEN_EXPIRE_DAYS", "7"))
@@ -44,15 +46,33 @@ def create_access_token(user_id: str, school_id: str, role: str) -> str:
     return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
 
 
-def create_refresh_token(user_id: str) -> str:
-    """リフレッシュトークン（JWT）を生成する。"""
+def create_refresh_token(
+    user_id: str,
+    family_id: str | None = None,
+) -> tuple[str, str, str]:
+    """リフレッシュトークン（JWT）を生成する。
+
+    Args:
+        user_id: ユーザーID
+        family_id: トークンファミリーID（ローテーション時に引き継ぐ）。
+                   None の場合は新規ファミリーを作成。
+
+    Returns:
+        (token_string, jti, family_id)
+    """
+    jti = secrets.token_hex(16)
+    resolved_family = family_id or secrets.token_hex(16)
+    exp = datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)
     payload = {
         "sub": user_id,
         "type": "refresh",
-        "exp": datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
+        "jti": jti,
+        "family_id": resolved_family,
+        "exp": exp,
         "iat": datetime.now(timezone.utc),
     }
-    return jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+    token = jwt.encode(payload, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+    return token, jti, resolved_family
 
 
 def create_mfa_pending_token(user_id: str) -> str:
@@ -92,39 +112,63 @@ def verify_totp(secret: str, code: str) -> bool:
 
 
 def hash_backup_code(code: str) -> str:
-    """バックアップコードをSHA-256でハッシュ化する。"""
+    """バックアップコードをbcryptでハッシュ化する。"""
+    return bcrypt.hashpw(code.encode(), bcrypt.gensalt()).decode()
+
+
+def _hash_backup_code_sha256(code: str) -> str:
+    """旧形式: SHA-256ハッシュ（後方互換の照合用のみ）。"""
     return hashlib.sha256(code.encode()).hexdigest()
 
 
 def generate_backup_codes() -> list[str]:
-    """MFAバックアップコード（10個）を生成する。各8文字の英数字。"""
-    return [secrets.token_hex(4) for _ in range(MFA_BACKUP_CODE_COUNT)]
+    """MFAバックアップコード（10個）を生成する。各16文字のhex（2^64エントロピー）。"""
+    return [secrets.token_hex(8) for _ in range(MFA_BACKUP_CODE_COUNT)]
 
 
 def hash_backup_codes(codes: list[str]) -> list[str]:
-    """バックアップコードリストをハッシュ化して返す（保存用）。"""
+    """バックアップコードリストをbcryptハッシュ化して返す（保存用）。"""
     return [hash_backup_code(c) for c in codes]
+
+
+def _is_bcrypt_hash(s: str) -> bool:
+    """bcryptハッシュかどうかを判定する。"""
+    return s.startswith(("$2b$", "$2a$", "$2y$"))
+
+
+def _is_sha256_hash(s: str) -> bool:
+    """SHA-256ハッシュ（64文字hex）かどうかを判定する。"""
+    return len(s) == 64 and all(c in "0123456789abcdef" for c in s)
 
 
 def verify_backup_code(stored_codes_json: str, code: str) -> tuple[bool, str]:
     """バックアップコードを検証し、使用済みなら除去した新しいJSON文字列を返す。
 
-    ハッシュ化保存と平文保存の両方に対応（移行期の後方互換）。
+    3形式に対応（移行期の後方互換）:
+    1. bcryptハッシュ（$2b$...）— 新形式
+    2. SHA-256ハッシュ（64文字hex）— 旧形式
+    3. 平文 — 最旧形式
 
     Returns:
         (is_valid, updated_codes_json)
     """
     codes: list[str] = json.loads(stored_codes_json)
-    code_hash = hash_backup_code(code)
 
-    # ハッシュ化済みコードとの照合
-    if code_hash in codes:
-        codes.remove(code_hash)
-        return True, json.dumps(codes)
-
-    # 平文コードとの照合（旧データ互換）
-    if code in codes:
-        codes.remove(code)
-        return True, json.dumps(codes)
+    for i, stored in enumerate(codes):
+        if _is_bcrypt_hash(stored):
+            # bcryptハッシュとの照合
+            if bcrypt.checkpw(code.encode(), stored.encode()):
+                codes.pop(i)
+                return True, json.dumps(codes)
+        elif _is_sha256_hash(stored):
+            # 旧SHA-256ハッシュとの照合
+            if _hash_backup_code_sha256(code) == stored:
+                codes.pop(i)
+                return True, json.dumps(codes)
+        else:
+            # 平文との照合（最旧データ互換）
+            if code == stored:
+                codes.pop(i)
+                return True, json.dumps(codes)
 
     return False, stored_codes_json

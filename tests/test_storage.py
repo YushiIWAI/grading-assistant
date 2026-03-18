@@ -257,8 +257,17 @@ class TestRetentionDays:
 
 
 class TestSeedAdmin:
-    def test_seed_idempotent(self, test_db):
+    def test_seed_idempotent(self, test_db, monkeypatch):
+        monkeypatch.setenv("ADMIN_EMAIL", "test-admin@example.com")
+        monkeypatch.setenv("ADMIN_PASSWORD", "test-password-123")
         school1, user1 = storage.seed_admin_user()
         school2, user2 = storage.seed_admin_user()
         assert school1.id == school2.id
         assert user1.id == user2.id
+
+    def test_seed_without_env_raises(self, test_db, monkeypatch):
+        monkeypatch.delenv("ADMIN_EMAIL", raising=False)
+        monkeypatch.delenv("ADMIN_PASSWORD", raising=False)
+        import pytest
+        with pytest.raises(ValueError, match="ADMIN_EMAIL"):
+            storage.seed_admin_user()

@@ -21,6 +21,7 @@ from api_client import (
     ApiClientError,
     create_session_record,
     export_csv,
+    import_csv as import_csv_via_api,
     list_sessions,
     load_rubric_from_yaml,
     load_session,
@@ -48,6 +49,10 @@ from scoring_engine import (
     recommend_batch_size,
 )
 load_dotenv()
+
+# --- 起動時設定検証 ---
+from config import validate_secrets
+validate_secrets()
 
 # --- ページ設定 ---
 st.set_page_config(
@@ -78,6 +83,10 @@ def check_auth() -> bool:
     if not has_users:
         return _check_legacy_password()
 
+    # MFA検証待ち状態の場合: TOTPコード入力画面
+    if st.session_state.get("mfa_pending"):
+        return _check_mfa_verify()
+
     # JWT ログインフォーム
     st.markdown(
         "<h2 style='text-align:center; margin-top:2rem;'>📝 国語 採点支援</h2>"
@@ -91,15 +100,59 @@ def check_auth() -> bool:
         if submitted and email and password:
             try:
                 result = api_client.login(email, password)
-                st.session_state["authenticated"] = True
-                st.session_state["access_token"] = result["access_token"]
-                st.session_state["refresh_token"] = result["refresh_token"]
-                st.session_state["user"] = result["user"]
-                api_client.set_auth_token(result["access_token"])
-                st.rerun()
+                if result.get("mfa_required"):
+                    # MFA検証待ち状態に遷移
+                    st.session_state["mfa_pending"] = True
+                    st.session_state["mfa_token"] = result["mfa_token"]
+                    st.rerun()
+                else:
+                    _complete_login(result)
+                    st.rerun()
             except ApiClientError:
                 st.error("メールアドレスまたはパスワードが正しくありません")
     return False
+
+
+def _check_mfa_verify() -> bool:
+    """MFA検証画面。TOTPコードまたはバックアップコードを入力して認証を完了する。"""
+    st.markdown(
+        "<h2 style='text-align:center; margin-top:2rem;'>🔐 二要素認証</h2>"
+        "<p style='text-align:center; color:#64748b;'>認証アプリのコードを入力してください</p>",
+        unsafe_allow_html=True,
+    )
+    with st.form("mfa_form"):
+        code = st.text_input("認証コード（6桁）またはバックアップコード", max_chars=16)
+        col1, col2 = st.columns(2)
+        with col1:
+            submitted = st.form_submit_button("認証", use_container_width=True)
+        with col2:
+            cancelled = st.form_submit_button("キャンセル", use_container_width=True)
+
+        if cancelled:
+            st.session_state.pop("mfa_pending", None)
+            st.session_state.pop("mfa_token", None)
+            st.rerun()
+
+        if submitted and code:
+            mfa_token = st.session_state.get("mfa_token", "")
+            try:
+                result = api_client.mfa_verify(mfa_token, code)
+                st.session_state.pop("mfa_pending", None)
+                st.session_state.pop("mfa_token", None)
+                _complete_login(result)
+                st.rerun()
+            except ApiClientError:
+                st.error("認証コードが正しくありません。もう一度お試しください。")
+    return False
+
+
+def _complete_login(result: dict) -> None:
+    """ログイン成功時の共通処理: セッションステートにトークンとユーザー情報を保存する。"""
+    st.session_state["authenticated"] = True
+    st.session_state["access_token"] = result["access_token"]
+    st.session_state["refresh_token"] = result["refresh_token"]
+    st.session_state["user"] = result["user"]
+    api_client.set_auth_token(result["access_token"])
 
 
 def _check_has_users() -> bool:
@@ -288,6 +341,9 @@ DEFAULTS = {
     "student_groups": [],
     "rubric": None,
     "pdf_bytes": b"",
+    "data_source": None,  # "pdf" | "csv" — どちらで取り込んだか
+    "csv_data": None,      # FormsCSVData（CSV取り込み時に使用）
+    "_csv_content": None,  # CSV生テキスト（API送信用）
     "gemini_key": os.getenv("GOOGLE_API_KEY", ""),
     "anthropic_key": os.getenv("ANTHROPIC_API_KEY", ""),
     "privacy_accepted": False,
@@ -371,14 +427,21 @@ def review_needed_badge_html(count: int) -> str:
 
 
 def build_provider():
-    """現在の設定からプロバイダーを構築する"""
+    """現在の設定からプロバイダーを構築する。
+
+    APIキー未設定時は None を返し、呼び出し元で設定案内を表示する。
+    """
     config = get_provider_config()
-    return build_provider_from_config(
-        provider_name=config["provider"],
-        api_key=config["api_key"],
-        model_name=config["model_name"],
-        privacy_mask=PrivacyMaskConfig(**config["privacy_mask"]),
-    )
+    try:
+        provider, _ = build_provider_from_config(
+            provider_name=config["provider"],
+            api_key=config["api_key"],
+            model_name=config["model_name"],
+            privacy_mask=PrivacyMaskConfig(**config["privacy_mask"]),
+        )
+        return provider
+    except ValueError:
+        return None
 
 
 def get_provider_config() -> dict:
@@ -556,14 +619,26 @@ with st.sidebar:
 
     # --- 採点オプション ---
     st.subheader("採点オプション")
-    st.checkbox(
-        "2段構えOCR（レイアウト分析＋読み取り）",
-        value=True,
-        key="enable_two_stage_ocr",
-        help="最初の答案でレイアウト（解答欄の位置・構成）を分析し、"
-             "その結果を使って全答案の読み取り精度を向上させます。"
-             "同じ形式の答案が続く場合に特に効果的です。",
-    )
+    # CSV取り込み済みの場合はOCR関連オプションを非表示（OCRが不要なため）
+    if st.session_state.get("data_source") != "csv":
+        st.radio(
+            "答案の形式",
+            options=["typed", "handwritten"],
+            format_func=lambda x: "電子データ（タイプ入力・Classroom等）" if x == "typed" else "手書き答案（スキャンPDF）",
+            index=0,
+            key="submission_type",
+            help="電子データの場合は軽量・高速な処理を行います。"
+                 "手書き答案の場合は高解像度画像＋レイアウト分析で精度を優先します。",
+        )
+        st.checkbox(
+            "2段構えOCR（レイアウト分析＋読み取り）",
+            value=True,
+            key="enable_two_stage_ocr",
+            help="最初の答案でレイアウト（解答欄の位置・構成）を分析し、"
+                 "その結果を使って全答案の読み取り精度を向上させます。"
+                 "同じ形式の答案が続く場合に特に効果的です。",
+            disabled=st.session_state.get("submission_type") == "typed",
+        )
     st.checkbox(
         "ダブルチェック方式（記述式）",
         value=True,
@@ -588,7 +663,10 @@ with st.sidebar:
 
     # --- 過去のセッション ---
     st.subheader("過去の採点データ")
-    sessions = list_sessions()
+    try:
+        sessions = list_sessions()
+    except api_client.ApiClientError:
+        sessions = []
     if sessions:
         options = {s["session_id"]: f'{s["rubric_title"]} ({s["student_count"]}名)' for s in sessions}
         selected = st.selectbox(
@@ -917,14 +995,15 @@ with tab_scoring:
 
     # --- ステッパーUI ---
     _session = st.session_state.session
-    _has_pdf = len(st.session_state.student_groups) > 0
+    _is_csv = st.session_state.get("data_source") == "csv"
+    _has_data = len(st.session_state.student_groups) > 0 or _is_csv
     _ocr_done = _session and _session.ocr_results and len(_session.ocr_results) > 0
     _ocr_reviewed = _session and _session.ocr_complete() if _session else False
     _graded = _session and _session.students and any(s.status != "pending" for s in _session.students) if _session else False
 
     _steps = [
-        ("PDF取り込み", _has_pdf),
-        ("文字読み取り", _ocr_done),
+        ("データ取り込み", _has_data),
+        ("CSV取り込み済み" if _is_csv else "文字読み取り", _ocr_done),
         ("読み取り確認", _ocr_reviewed),
         ("まとめ採点", _graded),
     ]
@@ -945,53 +1024,216 @@ with tab_scoring:
     with st.container():
         st.markdown(f'<div style="display:flex;align-items:flex-start;justify-content:center;padding:12px 16px;margin-bottom:16px;background:white;border-radius:12px;border:1px solid #e2e8f0;">{_step_html}</div>', unsafe_allow_html=True)
 
-    # --- PDF読み込み ---
-    # @st.fragment で隔離し、ファイル選択時のリランがタブ選択をリセットするのを防ぐ
-    @st.fragment
-    def _pdf_upload_fragment():
-        st.subheader("答案PDFのアップロード")
-        st.caption("スキャンした答案のPDFファイルを取り込みます。")
+    # --- データ取り込み（PDF / CSV）---
+    st.subheader("答案データの取り込み")
+    input_tab_pdf, input_tab_csv = st.tabs(["答案PDF", "Google Forms 回答CSV"])
 
-        col_pdf1, col_pdf2 = st.columns([2, 1])
-        with col_pdf1:
-            pdf_file = st.file_uploader("答案PDFファイル", type=["pdf"], key="pdf_uploader")
-        with col_pdf2:
-            if st.session_state.rubric:
-                pages_per = st.number_input(
-                    "1人あたりのページ数",
-                    min_value=1, max_value=10,
-                    value=st.session_state.rubric.pages_per_student,
-                )
-            else:
-                pages_per = st.number_input("1人あたりのページ数", min_value=1, max_value=10, value=1)
+    # --- タブ1: PDF読み込み ---
+    with input_tab_pdf:
+        @st.fragment
+        def _pdf_upload_fragment():
+            st.caption("スキャンした答案のPDFファイルを取り込みます。")
 
-        if pdf_file and st.button("答案を取り込む", type="primary"):
-            with st.spinner("PDFを画像に変換中..."):
-                pdf_bytes = pdf_file.read()
-                st.session_state.pdf_bytes = pdf_bytes
-                st.session_state.pdf_filename = pdf_file.name
-                images = pdf_to_images(pdf_bytes)
-                st.session_state.images = images
-                if len(images) % pages_per != 0:
-                    st.warning(
-                        f"総ページ数 {len(images)} は「1人あたり{pages_per}ページ」で割り切れません。"
-                        f"最後の学生のページが不完全になる可能性があります。"
+            col_pdf1, col_pdf2 = st.columns([2, 1])
+            with col_pdf1:
+                pdf_file = st.file_uploader("答案PDFファイル", type=["pdf"], key="pdf_uploader")
+            with col_pdf2:
+                if st.session_state.rubric:
+                    pages_per = st.number_input(
+                        "1人あたりのページ数",
+                        min_value=1, max_value=10,
+                        value=st.session_state.rubric.pages_per_student,
                     )
-                groups = split_pages_by_student(images, pages_per)
-                st.session_state.student_groups = groups
-                st.success(f"{len(images)}ページ → {len(groups)}名分に分割しました")
-                # fragment外（OCRセクション等）を更新するためアプリ全体をリラン
-                st.rerun(scope="app")
+                else:
+                    pages_per = st.number_input("1人あたりのページ数", min_value=1, max_value=10, value=1)
 
-        # プレビュー
-        if st.session_state.student_groups:
-            with st.expander(f"答案プレビュー（{len(st.session_state.student_groups)}名分）"):
-                preview_idx = st.slider("学生番号", 1, len(st.session_state.student_groups), 1, key="preview_slider")
-                group = st.session_state.student_groups[preview_idx - 1]
-                for page_num, img in group:
-                    st.image(image_to_bytes(img), caption=f"ページ {page_num}", use_container_width=True)
+            if pdf_file and st.button("答案を取り込む", type="primary", key="import_pdf_btn"):
+                with st.spinner("PDFを画像に変換中..."):
+                    pdf_bytes = pdf_file.read()
+                    st.session_state.pdf_bytes = pdf_bytes
+                    st.session_state.pdf_filename = pdf_file.name
+                    images = pdf_to_images(pdf_bytes)
+                    st.session_state.images = images
+                    if len(images) % pages_per != 0:
+                        st.warning(
+                            f"総ページ数 {len(images)} は「1人あたり{pages_per}ページ」で割り切れません。"
+                            f"最後の学生のページが不完全になる可能性があります。"
+                        )
+                    groups = split_pages_by_student(images, pages_per)
+                    st.session_state.student_groups = groups
+                    st.session_state.data_source = "pdf"
+                    # CSV由来の状態をクリア
+                    st.session_state.csv_data = None
+                    st.session_state._csv_content = None
+                    st.session_state.session = None
+                    st.success(f"{len(images)}ページ → {len(groups)}名分に分割しました")
+                    st.rerun(scope="app")
 
-    _pdf_upload_fragment()
+            if st.session_state.student_groups and st.session_state.get("data_source") == "pdf":
+                with st.expander(f"答案プレビュー（{len(st.session_state.student_groups)}名分）"):
+                    n_groups = len(st.session_state.student_groups)
+                    preview_idx = st.slider("学生番号", 1, max(n_groups, 2), 1, key="preview_slider") if n_groups > 1 else 1
+                    group = st.session_state.student_groups[preview_idx - 1]
+                    for page_num, img in group:
+                        st.image(image_to_bytes(img), caption=f"ページ {page_num}", use_container_width=True)
+
+        _pdf_upload_fragment()
+
+    # --- タブ2: Google Forms 回答CSV ---
+    with input_tab_csv:
+        @st.fragment
+        def _csv_upload_fragment():
+            from csv_importer import parse_forms_csv, get_question_candidate_cols, convert_to_ocr_results, ColumnMapping
+
+            st.caption("Google Forms の回答スプレッドシートからダウンロードした CSV を取り込みます。")
+
+            if not st.session_state.rubric:
+                st.info("先に「1. 採点基準」タブで採点基準を設定してください。設問と列の対応付けに必要です。")
+
+            csv_file = st.file_uploader("回答CSVファイル", type=["csv"], key="csv_uploader")
+
+            if csv_file and not st.session_state.rubric:
+                st.warning("CSVをアップロードしましたが、採点基準が未設定のため列マッピングができません。")
+            elif csv_file:
+                try:
+                    csv_content = csv_file.read().decode("utf-8-sig")
+                except UnicodeDecodeError:
+                    csv_file.seek(0)
+                    csv_content = csv_file.read().decode("shift_jis", errors="replace")
+
+                try:
+                    csv_data = parse_forms_csv(csv_content)
+                    st.session_state.csv_data = csv_data
+                    st.session_state._csv_content = csv_content
+                except ValueError as e:
+                    st.error(str(e))
+                    return
+
+                st.success(f"{len(csv_data.rows)}名分のデータを検出しました")
+
+                # --- 列マッピングUI ---
+                st.markdown("**列の役割を設定してください**")
+
+                rubric = st.session_state.rubric
+                question_options = []
+                if rubric:
+                    for q in rubric.questions:
+                        if q.sub_questions:
+                            for sq in q.sub_questions:
+                                question_options.append(f"問{q.id}-{sq.id}")
+                        else:
+                            question_options.append(f"問{q.id}")
+
+                role_options = ["無視", "組", "番号", "氏名"] + question_options
+                auto = csv_data.auto_mapping
+                candidate_cols = get_question_candidate_cols(csv_data)
+
+                col_roles = {}
+                for i, header in enumerate(csv_data.headers):
+                    # 自動推定に基づくデフォルト値
+                    if i in auto.ignore_cols:
+                        default_idx = 0  # 無視
+                    elif i == auto.class_col:
+                        default_idx = 1  # 組
+                    elif i == auto.number_col:
+                        default_idx = 2  # 番号
+                    elif i == auto.name_col:
+                        default_idx = 3  # 氏名
+                    elif i in candidate_cols and question_options:
+                        # 設問候補を順番に割り当て
+                        q_idx = candidate_cols.index(i)
+                        if q_idx < len(question_options):
+                            default_idx = 4 + q_idx
+                        else:
+                            default_idx = 0
+                    else:
+                        default_idx = 0
+
+                    truncated = header[:40] + "..." if len(header) > 40 else header
+                    col_roles[i] = st.selectbox(
+                        f"列{i+1}: {truncated}",
+                        options=role_options,
+                        index=min(default_idx, len(role_options) - 1),
+                        key=f"csv_col_role_{i}",
+                    )
+
+                # プレビュー（先頭5行）
+                with st.expander("データプレビュー（先頭5行）"):
+                    import pandas as pd
+                    preview_df = pd.DataFrame(
+                        csv_data.rows[:5],
+                        columns=csv_data.headers,
+                    )
+                    st.dataframe(preview_df, use_container_width=True)
+
+                # 取り込みボタン
+                if rubric and st.button("回答データを取り込む", type="primary", key="import_csv_btn"):
+                    # col_roles → ColumnMapping
+                    mapping = ColumnMapping()
+                    for i, role in col_roles.items():
+                        if role == "無視":
+                            mapping.ignore_cols.append(i)
+                        elif role == "組":
+                            mapping.class_col = i
+                        elif role == "番号":
+                            mapping.number_col = i
+                        elif role == "氏名":
+                            mapping.name_col = i
+                        elif role.startswith("問"):
+                            # "問1" → "1", "問1-a" → "1-a"
+                            qid = role[1:]
+                            mapping.question_cols[qid] = i
+
+                    if not mapping.question_cols:
+                        st.error("設問に対応する列を1つ以上指定してください。")
+                        return
+
+                    # セッション作成 + CSV取り込み
+                    with st.spinner("回答データを取り込み中..."):
+                        session = create_session_record(
+                            rubric_title=rubric.title,
+                            pdf_filename=csv_file.name,
+                            pages_per_student=rubric.pages_per_student,
+                        )
+                        try:
+                            session, errors = import_csv_via_api(
+                                session_id=session.session_id,
+                                rubric=rubric,
+                                csv_content=st.session_state._csv_content,
+                                column_mapping={
+                                    "class_col": mapping.class_col,
+                                    "number_col": mapping.number_col,
+                                    "name_col": mapping.name_col,
+                                    "question_cols": mapping.question_cols,
+                                    "ignore_cols": mapping.ignore_cols,
+                                },
+                            )
+                        except ApiClientError as e:
+                            st.error(f"CSV取り込みに失敗しました: {e}")
+                            return
+
+                    st.session_state.session = session
+                    st.session_state.data_source = "csv"
+                    # PDF由来の状態をクリア
+                    st.session_state.student_groups = []
+                    st.session_state.images = []
+                    st.session_state.pdf_bytes = b""
+                    st.success(f"{len(session.ocr_results)}名分の回答データを取り込みました")
+
+                    if errors:
+                        for err in errors:
+                            st.warning(err)
+
+                    st.rerun(scope="app")
+
+
+            # CSV取り込み済みの表示
+            if st.session_state.session and st.session_state.get("data_source") == "csv":
+                session = st.session_state.session
+                if session.ocr_results:
+                    st.success(f"CSV取り込み済み: {len(session.ocr_results)}名分")
+
+        _csv_upload_fragment()
 
     st.divider()
 
@@ -1001,13 +1243,25 @@ with tab_scoring:
             "このステップでは、採点基準をもとにAIが仮採点を行います。\n\n"
             "**次のアクション:** 「1. 採点基準」タブで採点基準を設定してください。"
         )
-    elif not st.session_state.student_groups:
-        st.info("上の「答案PDFのアップロード」から答案ファイルを取り込んでください。")
+    elif not st.session_state.student_groups and st.session_state.get("data_source") != "csv":
+        st.info("上の「答案データの取り込み」からPDFまたはCSVファイルを取り込んでください。")
     else:
         rubric = st.session_state.rubric
         prov = build_provider()
+        is_csv_source = st.session_state.get("data_source") == "csv"
 
-        st.write(f"**試験**: {rubric.title} / **学生数**: {len(st.session_state.student_groups)}名 / **AI**: {prov.name}")
+        if prov is None:
+            st.error(
+                "選択中のAIプロバイダのAPIキーが設定されていません。\n\n"
+                "サイドバーの「AIプロバイダ設定」からAPIキーを入力するか、「デモモード」に切り替えてください。"
+            )
+            st.stop()
+
+        if is_csv_source:
+            n_students = len(st.session_state.session.ocr_results) if st.session_state.session else 0
+            st.write(f"**試験**: {rubric.title} / **学生数**: {n_students}名（CSV取り込み） / **AI**: {prov.name}")
+        else:
+            st.write(f"**試験**: {rubric.title} / **学生数**: {len(st.session_state.student_groups)}名 / **AI**: {prov.name}")
         if st.session_state.get("mask_student_name", True) and not isinstance(prov, DemoProvider):
             st.caption("外部AI送信時は先頭ページ上部の氏名欄を自動マスキングします。氏名はステップ2で必要に応じて補ってください。")
 
@@ -1035,15 +1289,20 @@ with tab_scoring:
         session = st.session_state.session
 
         # ==========================================================
-        # Step 1: OCR（Phase 1）
+        # Step 1: OCR（Phase 1）— CSV取り込みの場合はスキップ
         # ==========================================================
-        st.subheader("ステップ1: 答案の文字読み取り（OCR）")
+        if is_csv_source:
+            st.subheader("ステップ1: 回答データ（CSV取り込み済み）")
+            if session and session.ocr_results:
+                st.success(f"CSV取り込み完了: {len(session.ocr_results)}名分（文字読み取り不要）")
+        else:
+            st.subheader("ステップ1: 答案の文字読み取り（OCR）")
 
-        if session and session.ocr_results:
+        if not is_csv_source and session and session.ocr_results:
             ocr_ok = sum(1 for o in session.ocr_results if o.status in ("ocr_done", "reviewed"))
             ocr_err = sum(1 for o in session.ocr_results if o.status == "pending" and o.ocr_error)
             st.success(f"読み取り完了: {ocr_ok}名分" + (f"（{ocr_err}名分は読み取れませんでした）" if ocr_err else ""))
-        elif can_run:
+        elif not is_csv_source and can_run:
             if st.button("文字の読み取りを開始", type="primary", key="start_ocr"):
                 pdf_bytes = st.session_state.get("pdf_bytes", b"")
                 if not pdf_bytes:
@@ -1055,6 +1314,7 @@ with tab_scoring:
                     pdf_filename=st.session_state.get("pdf_filename", "uploaded.pdf"),
                     pages_per_student=rubric.pages_per_student,
                 )
+                sub_type = st.session_state.get("submission_type", "handwritten")
                 two_stage = st.session_state.get("enable_two_stage_ocr", True)
                 n_students = len(st.session_state.student_groups)
                 with st.status(
@@ -1062,7 +1322,9 @@ with tab_scoring:
                     expanded=True,
                 ) as ocr_status:
                     st.write(f"**{n_students}名**の答案を読み取っています。")
-                    if two_stage:
+                    if sub_type == "typed":
+                        st.write("電子データモード: 軽量・高速処理で読み取ります。")
+                    elif two_stage:
                         st.write("レイアウト分析 → 文字読み取り の2段階で処理します。")
                     st.write(f"AI: **{prov.name}** / 1名あたり数秒〜十数秒かかります。")
                     try:
@@ -1072,6 +1334,7 @@ with tab_scoring:
                             pdf_bytes=pdf_bytes,
                             provider_config=get_provider_config(),
                             enable_two_stage=two_stage,
+                            submission_type=sub_type,
                         )
                     except ApiClientError as e:
                         ocr_status.update(label="文字読み取りに失敗しました", state="error")
@@ -1395,12 +1658,15 @@ with tab_scoring:
                     "読み取り済みのデータを使うため、短時間で完了します。"
                 )
 
-                can_rerun = isinstance(build_provider(), DemoProvider) or st.session_state.privacy_accepted
-                if can_rerun and st.button("お手本を使って再採点する", type="primary", key="re_grade_horizontal"):
+                _re_prov = build_provider()
+                can_rerun = _re_prov is not None and (isinstance(_re_prov, DemoProvider) or st.session_state.privacy_accepted)
+                if _re_prov is None:
+                    st.warning("APIキーが設定されていません。サイドバーで設定してください。")
+                elif can_rerun and st.button("お手本を使って再採点する", type="primary", key="re_grade_horizontal"):
                     rubric = st.session_state.rubric
                     target_ids = [s.student_id for s in unconfirmed]
                     save_session(session)
-                    re_prov = build_provider()
+                    re_prov = _re_prov
                     with st.status(
                         f"お手本再採点中... （{len(target_ids)}名）",
                         expanded=True,

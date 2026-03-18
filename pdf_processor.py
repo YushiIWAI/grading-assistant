@@ -87,8 +87,66 @@ def mask_images_for_external_ai(
     return masked_images
 
 
-def pdf_to_images(pdf_bytes: bytes, dpi: int = 200) -> list[Image.Image]:
-    """PDFの各ページをPIL Imageに変換する"""
+def _try_extract_page_image(
+    doc: fitz.Document, page: fitz.Page, dpi: int,
+) -> Image.Image | None:
+    """ページに埋め込まれた画像を直接抽出する。
+
+    スキャンPDFの場合、ページ全体を覆う1枚の画像が埋め込まれている。
+    ラスタライズより高解像度の元画像をそのまま使えるため、OCR精度が向上する。
+    抽出できない場合は None を返す。
+    """
+    page_images = page.get_images(full=True)
+    if len(page_images) != 1:
+        return None
+
+    xref = page_images[0][0]
+    try:
+        extracted = doc.extract_image(xref)
+    except Exception:
+        return None
+
+    img_width, img_height = extracted["width"], extracted["height"]
+
+    # ラスタライズ時のサイズと比較し、埋込画像のほうが高解像度な場合のみ使う
+    raster_width = page.rect.width * dpi / 72
+    raster_height = page.rect.height * dpi / 72
+    if img_width < raster_width * 0.9 and img_height < raster_height * 0.9:
+        return None  # 埋込画像が小さい（ロゴ等）のでラスタライズのほうが良い
+
+    try:
+        img = Image.open(io.BytesIO(extracted["image"])).convert("RGB")
+    except Exception:
+        return None
+
+    # ページの向きと画像の向きが合っているか確認（縦横比の差で判定）
+    page_landscape = page.rect.width > page.rect.height
+    img_landscape = img_width > img_height
+    if page_landscape != img_landscape:
+        img = img.rotate(90, expand=True)
+
+    # ページに回転が設定されている場合も補正
+    if page.rotation:
+        img = img.rotate(-page.rotation, expand=True)
+
+    return img
+
+
+def pdf_to_images(
+    pdf_bytes: bytes, dpi: int = 200, prefer_embedded: bool = True,
+    submission_type: str = "handwritten",
+) -> list[Image.Image]:
+    """PDFの各ページをPIL Imageに変換する。
+
+    prefer_embedded=True の場合、スキャンPDFの埋込画像を直接抽出して
+    ラスタライズによる解像度劣化を回避する。
+
+    submission_type="typed" の場合、埋込画像抽出をスキップし、
+    低めのDPI（150）でラスタライズして処理を高速化する。
+    """
+    if submission_type == "typed":
+        prefer_embedded = False
+        dpi = min(dpi, 150)  # typed では 150dpi で十分
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     images = []
     zoom = dpi / 72  # 72 DPI がデフォルト
@@ -96,12 +154,74 @@ def pdf_to_images(pdf_bytes: bytes, dpi: int = 200) -> list[Image.Image]:
 
     for page_num in range(len(doc)):
         page = doc[page_num]
-        pix = page.get_pixmap(matrix=matrix)
-        img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+
+        img = None
+        if prefer_embedded:
+            img = _try_extract_page_image(doc, page, dpi)
+
+        if img is None:
+            pix = page.get_pixmap(matrix=matrix)
+            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+
         images.append(img)
 
     doc.close()
     return images
+
+
+def crop_regions_from_image(
+    image: Image.Image,
+    regions: list[dict],
+    padding_ratio: float = 0.02,
+) -> list[tuple[str, Image.Image]]:
+    """正規化bbox座標を使って、画像から各解答欄領域を切り出す。
+
+    Args:
+        image: 元のページ画像
+        regions: レイアウト分析結果のリージョン（bbox: [x_min, y_min, x_max, y_max], 0.0~1.0）
+        padding_ratio: 切り出し時の余白比率
+
+    Returns:
+        (question_id, cropped_image) のリスト。bboxがないリージョンはスキップ。
+    """
+    width, height = image.size
+    results: list[tuple[str, Image.Image]] = []
+
+    for region in regions:
+        bbox = region.get("bbox")
+        if not bbox or len(bbox) != 4:
+            continue
+
+        try:
+            x_min, y_min, x_max, y_max = [float(v) for v in bbox]
+        except (TypeError, ValueError):
+            continue
+
+        # 正規化座標(0-1)が範囲外なら補正
+        x_min, y_min = max(0.0, x_min), max(0.0, y_min)
+        x_max, y_max = min(1.0, x_max), min(1.0, y_max)
+        if x_min >= x_max or y_min >= y_max:
+            continue
+
+        # パディングを追加
+        pad_x = (x_max - x_min) * padding_ratio
+        pad_y = (y_max - y_min) * padding_ratio
+        x_min = max(0.0, x_min - pad_x)
+        y_min = max(0.0, y_min - pad_y)
+        x_max = min(1.0, x_max + pad_x)
+        y_max = min(1.0, y_max + pad_y)
+
+        # ピクセル座標に変換
+        px_left = int(x_min * width)
+        px_top = int(y_min * height)
+        px_right = int(x_max * width)
+        px_bottom = int(y_max * height)
+
+        cropped = image.crop((px_left, px_top, px_right, px_bottom))
+        qid = str(region.get("question_id", "?"))
+        results.append((qid, cropped))
+
+    return results
 
 
 def split_pages_by_student(

@@ -38,9 +38,10 @@ users = Table(
     Column("display_name", Text, nullable=False, server_default=""),
     Column("role", String(20), nullable=False, server_default="teacher"),
     Column("is_active", Boolean, nullable=False, server_default=sa.text("1")),
-    Column("mfa_secret", String(32), nullable=True),
+    Column("mfa_secret", Text, nullable=True),
     Column("mfa_enabled", Boolean, nullable=False, server_default=sa.text("0")),
     Column("mfa_backup_codes", Text, nullable=True),
+    Column("token_invalidated_at", Text, nullable=True),
     Column("created_at", Text, nullable=False),
     Column("updated_at", Text, nullable=False, server_default=""),
 )
@@ -92,7 +93,29 @@ audit_logs = Table(
     Column("ip_address", String(45), nullable=True),
     Column("integrity_hash", String(64), nullable=False),
     Column("prev_hash", String(64), nullable=False, server_default=""),
+    Column("hash_version", Integer, nullable=False, server_default="2"),
 )
+
+audit_chain_pointer = Table(
+    "audit_chain_pointer",
+    metadata,
+    Column("id", Integer, primary_key=True, server_default="1"),
+    Column("latest_hash", String(64), nullable=False, server_default=""),
+)
+
+refresh_tokens = Table(
+    "refresh_tokens",
+    metadata,
+    Column("jti", String(36), primary_key=True),
+    Column("user_id", String(36), ForeignKey("users.id"), nullable=False),
+    Column("family_id", String(36), nullable=False),
+    Column("revoked", Boolean, nullable=False, server_default=sa.text("0")),
+    Column("created_at", Text, nullable=False),
+    Column("expires_at", Text, nullable=False),
+)
+
+Index("ix_refresh_tokens_user_id", refresh_tokens.c.user_id)
+Index("ix_refresh_tokens_family_id", refresh_tokens.c.family_id)
 
 # 監査ログの検索用インデックス
 Index("ix_audit_logs_timestamp", audit_logs.c.timestamp)

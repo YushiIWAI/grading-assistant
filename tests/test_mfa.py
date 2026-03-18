@@ -81,7 +81,7 @@ class TestBackupCodes:
     def test_code_format(self):
         codes = generate_backup_codes()
         for code in codes:
-            assert len(code) == 8
+            assert len(code) == 16  # token_hex(8) = 16文字hex
             assert all(c in "0123456789abcdef" for c in code)
 
     def test_verify_valid_code(self):
@@ -144,11 +144,13 @@ class TestMfaStorage:
         assert user.mfa_enabled is True
         assert user.mfa_backup_codes is not None
         stored_codes = json.loads(user.mfa_backup_codes)
-        # DBにはハッシュ化されたコードが保存される
+        # DBにはbcryptハッシュ化されたコードが保存される
         assert len(stored_codes) == 10
-        assert stored_codes != codes  # 平文とは一致しない
-        from auth import hash_backup_code
-        assert stored_codes == [hash_backup_code(c) for c in codes]
+        assert all(s.startswith("$2b$") for s in stored_codes)
+        # 各コードが照合できることを確認
+        import bcrypt as _bc
+        for code, hashed in zip(codes, stored_codes):
+            assert _bc.checkpw(code.encode(), hashed.encode())
 
     def test_disable_mfa(self, test_db, test_user):
         storage.setup_mfa(test_user.id, generate_mfa_secret())

@@ -170,14 +170,18 @@ class TestMfaSecretEncryption:
 class TestBackupCodeHashing:
     """バックアップコードのハッシュ化"""
 
-    def test_hash_backup_code_deterministic(self):
-        """同じコードは同じハッシュになる"""
-        code = "abcd1234"
-        assert hash_backup_code(code) == hash_backup_code(code)
+    def test_hash_backup_code_is_bcrypt(self):
+        """バックアップコードはbcryptでハッシュ化される"""
+        import bcrypt as _bc
+        code = "abcd1234abcd1234"
+        hashed = hash_backup_code(code)
+        assert hashed.startswith("$2b$")
+        assert _bc.checkpw(code.encode(), hashed.encode())
 
-    def test_hash_backup_code_different(self):
-        """異なるコードは異なるハッシュになる"""
-        assert hash_backup_code("abcd1234") != hash_backup_code("efgh5678")
+    def test_hash_backup_code_non_deterministic(self):
+        """bcryptハッシュは毎回異なる（ソルト付き）"""
+        code = "abcd1234abcd1234"
+        assert hash_backup_code(code) != hash_backup_code(code)
 
     def test_hash_backup_codes_list(self):
         """リスト全体のハッシュ化"""
@@ -185,6 +189,7 @@ class TestBackupCodeHashing:
         hashed = hash_backup_codes(codes)
         assert len(hashed) == len(codes)
         assert all(h != c for h, c in zip(hashed, codes))
+        assert all(h.startswith("$2b$") for h in hashed)
 
     def test_verify_hashed_backup_code(self):
         """ハッシュ化済みコードの照合"""
@@ -219,24 +224,37 @@ class TestBackupCodeHashing:
         assert remaining == ["11223344"]
 
     def test_enable_mfa_stores_hashed_codes(self, test_db, test_user):
-        """enable_mfaがハッシュ化コードをDBに保存する"""
+        """enable_mfaがbcryptハッシュ化コードをDBに保存する"""
+        import bcrypt as _bc
         storage.setup_mfa(test_user.id, generate_mfa_secret())
         codes = storage.enable_mfa(test_user.id)
         assert codes is not None
 
         user = storage.get_user(test_user.id)
         stored = json.loads(user.mfa_backup_codes)
-        # DBにはハッシュが入っている
-        assert stored == hash_backup_codes(codes)
-        # 平文とは一致しない
-        assert stored != codes
+        # DBにはbcryptハッシュが入っている
+        assert all(s.startswith("$2b$") for s in stored)
+        # 各コードのハッシュが照合できる
+        for code, hashed in zip(codes, stored):
+            assert _bc.checkpw(code.encode(), hashed.encode())
 
 
 class TestAuditHashExtended:
-    """監査ハッシュの署名対象拡張"""
+    """監査ハッシュv2の署名対象検証"""
 
-    def test_hash_includes_user_and_school(self):
-        """user_id, school_idが署名に含まれる"""
+    def test_hash_includes_school_id(self):
+        """school_idが署名に含まれる（不変コア）"""
+        base = _compute_audit_hash(
+            "id1", "2026-01-01T00:00:00", "login", "user", "u1", "",
+        )
+        with_school = _compute_audit_hash(
+            "id1", "2026-01-01T00:00:00", "login", "user", "u1", "",
+            school_id="school-456",
+        )
+        assert base != with_school
+
+    def test_hash_excludes_pii_user_id(self):
+        """user_idはPIIなので署名対象外（v2）"""
         base = _compute_audit_hash(
             "id1", "2026-01-01T00:00:00", "login", "user", "u1", "",
         )
@@ -244,16 +262,10 @@ class TestAuditHashExtended:
             "id1", "2026-01-01T00:00:00", "login", "user", "u1", "",
             user_id="user-123",
         )
-        with_school = _compute_audit_hash(
-            "id1", "2026-01-01T00:00:00", "login", "user", "u1", "",
-            school_id="school-456",
-        )
-        assert base != with_user
-        assert base != with_school
-        assert with_user != with_school
+        assert base == with_user  # PII は署名に影響しない
 
-    def test_hash_includes_details(self):
-        """detailsが署名に含まれる"""
+    def test_hash_excludes_pii_details(self):
+        """detailsはPIIなので署名対象外（v2）"""
         h1 = _compute_audit_hash(
             "id1", "2026-01-01T00:00:00", "login", "user", None, "",
             details={"email": "a@b.com"},
@@ -262,22 +274,10 @@ class TestAuditHashExtended:
             "id1", "2026-01-01T00:00:00", "login", "user", None, "",
             details={"email": "x@y.com"},
         )
-        assert h1 != h2
+        assert h1 == h2  # PII は署名に影響しない
 
-    def test_hash_details_key_order_independent(self):
-        """detailsのキー順序が異なっても同じハッシュになる"""
-        h1 = _compute_audit_hash(
-            "id1", "ts", "a", "t", None, "",
-            details={"a": 1, "b": 2},
-        )
-        h2 = _compute_audit_hash(
-            "id1", "ts", "a", "t", None, "",
-            details={"b": 2, "a": 1},
-        )
-        assert h1 == h2
-
-    def test_hash_includes_ip_address(self):
-        """ip_addressが署名に含まれる"""
+    def test_hash_excludes_pii_ip_address(self):
+        """ip_addressはPIIなので署名対象外（v2）"""
         h1 = _compute_audit_hash(
             "id1", "ts", "a", "t", None, "",
         )
@@ -285,7 +285,7 @@ class TestAuditHashExtended:
             "id1", "ts", "a", "t", None, "",
             ip_address="192.168.1.1",
         )
-        assert h1 != h2
+        assert h1 == h2  # PII は署名に影響しない
 
     def test_chain_integrity_with_extended_fields(self, test_db):
         """拡張フィールド付きの監査ログでチェーン検証が通る"""

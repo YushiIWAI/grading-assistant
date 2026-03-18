@@ -6,6 +6,10 @@ from sqlalchemy import engine_from_config
 from alembic import context
 
 from db import DATABASE_URL, metadata
+from config import validate_secrets
+
+# 起動時に秘密情報の設定を検証
+validate_secrets()
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

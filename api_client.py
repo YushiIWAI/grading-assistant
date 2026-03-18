@@ -65,6 +65,62 @@ def refresh_access_token(refresh_token: str) -> dict[str, Any]:
     return response.json()
 
 
+def mfa_verify(mfa_token: str, code: str) -> dict[str, Any]:
+    """MFA検証（ログイン第2段階）。TOTPコードまたはバックアップコードで認証を完了する。"""
+    response = _request(
+        "POST",
+        "/api/v1/auth/mfa/verify",
+        json={"mfa_token": mfa_token, "code": code},
+    )
+    if response.is_error:
+        raise ApiClientError(_extract_error_message(response))
+    return response.json()
+
+
+def mfa_setup() -> dict[str, Any]:
+    """MFAセットアップ: シークレット生成 + QRコード用URI返却。"""
+    response = _request("POST", "/api/v1/auth/mfa/setup")
+    if response.is_error:
+        raise ApiClientError(_extract_error_message(response))
+    return response.json()
+
+
+def mfa_enable(code: str) -> dict[str, Any]:
+    """MFA有効化: 最初のTOTPコードを検証してMFAを有効化する。"""
+    response = _request(
+        "POST",
+        "/api/v1/auth/mfa/enable",
+        json={"code": code},
+    )
+    if response.is_error:
+        raise ApiClientError(_extract_error_message(response))
+    return response.json()
+
+
+def mfa_disable(password: str) -> dict[str, Any]:
+    """MFA無効化: パスワード再確認の上、MFAを無効化する。"""
+    response = _request(
+        "POST",
+        "/api/v1/auth/mfa/disable",
+        json={"password": password},
+    )
+    if response.is_error:
+        raise ApiClientError(_extract_error_message(response))
+    return response.json()
+
+
+def change_password(current_password: str, new_password: str) -> dict[str, Any]:
+    """パスワード変更。変更後は全トークンが無効化される。"""
+    response = _request(
+        "POST",
+        "/api/v1/auth/change-password",
+        json={"current_password": current_password, "new_password": new_password},
+    )
+    if response.is_error:
+        raise ApiClientError(_extract_error_message(response))
+    return response.json()
+
+
 def get_me() -> dict[str, Any]:
     """現在の認証ユーザー情報を取得する。"""
     response = _request("GET", "/api/v1/auth/me")
@@ -246,6 +302,7 @@ def run_ocr(
     pdf_bytes: bytes,
     provider_config: dict[str, Any],
     enable_two_stage: bool = True,
+    submission_type: str = "handwritten",
 ) -> tuple[ScoringSession, list[str]]:
     response = _request(
         "POST",
@@ -256,6 +313,29 @@ def run_ocr(
             "pdf_base64": base64.b64encode(pdf_bytes).decode("utf-8"),
             "provider": provider_config,
             "enable_two_stage": enable_two_stage,
+            "submission_type": submission_type,
+        },
+    )
+    if response.is_error:
+        raise ApiClientError(_extract_error_message(response))
+    body = response.json()
+    return ScoringSession.from_dict(body["session"]), body["errors"]
+
+
+def import_csv(
+    session_id: str,
+    rubric: Rubric,
+    csv_content: str,
+    column_mapping: dict[str, Any],
+) -> tuple[ScoringSession, list[str]]:
+    response = _request(
+        "POST",
+        "/api/v1/runs/import-csv",
+        json={
+            "session_id": session_id,
+            "rubric": asdict(rubric),
+            "csv_content": csv_content,
+            "column_mapping": column_mapping,
         },
     )
     if response.is_error:

@@ -6,6 +6,7 @@ import base64
 import time
 from collections import defaultdict
 from dataclasses import asdict
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -20,6 +21,7 @@ from auth import (
     decode_token,
     generate_mfa_secret,
     get_totp_uri,
+    hash_password,
     verify_backup_code,
     verify_password,
     verify_totp,
@@ -34,7 +36,10 @@ from rubric_io import (
     rubric_to_yaml,
 )
 from scoring_engine import ocr_all_students, run_horizontal_grading
+from starlette.responses import JSONResponse
 from storage import (
+    DecryptionError,
+    change_password,
     delete_api_key,
     delete_school_data,
     delete_session,
@@ -55,7 +60,9 @@ from storage import (
     save_api_key,
     save_session,
     setup_mfa,
+    store_refresh_token,
     update_mfa_backup_codes,
+    use_refresh_token,
     verify_audit_chain,
 )
 
@@ -84,6 +91,11 @@ class MfaDisableRequest(BaseModel):
 class ApiKeySetRequest(BaseModel):
     provider: str = Field(..., pattern="^(gemini|anthropic)$")
     api_key: str = Field(..., min_length=1)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str = Field(..., min_length=1)
+    new_password: str = Field(..., min_length=8)
 
 
 class RefreshRequest(BaseModel):
@@ -133,6 +145,7 @@ class OcrRunRequest(BaseModel):
     pdf_base64: str = Field(..., min_length=1)
     provider: ProviderConfigRequest
     enable_two_stage: bool = True
+    submission_type: str = "handwritten"  # "typed" | "handwritten"
 
 
 class HorizontalGradingRunRequest(BaseModel):
@@ -144,6 +157,11 @@ class HorizontalGradingRunRequest(BaseModel):
     student_ids_to_grade: list[str] | None = None
 
 
+from config import validate_secrets
+
+# 起動時に秘密情報の設定を検証（本番で未設定なら起動拒否）
+validate_secrets()
+
 app = FastAPI(
     title="grading-assistant API",
     version="0.3.0",
@@ -154,13 +172,46 @@ app = FastAPI(
 )
 
 
+@app.exception_handler(DecryptionError)
+async def _decryption_error_handler(request: Request, exc: DecryptionError):
+    """暗号化キー不一致時に 503 を返す。"""
+    return JSONResponse(
+        status_code=503,
+        content={
+            "detail": "暗号化キーの設定エラーにより、データの復号に失敗しました。管理者に連絡してください。",
+        },
+    )
+
+
 # --- Rate Limiting ---
 
+# 信頼済みプロキシのIPリスト（TRUSTED_PROXIES 環境変数でカンマ区切り指定）
+# この設定がない場合、X-Forwarded-For ヘッダーは無視してクライアント直接IPを使用する。
+import os as _os
+_TRUSTED_PROXIES: set[str] = set(
+    p.strip() for p in _os.environ.get("TRUSTED_PROXIES", "").split(",") if p.strip()
+)
 
-class _RateLimiter:
-    """シンプルなインメモリ・スライディングウィンドウ方式のレート制限。
 
-    IPアドレス単位で、window秒間にmax_requests回までに制限する。
+def _get_redis():
+    """Redis クライアントを取得する。REDIS_URL 未設定時は None。"""
+    redis_url = _os.environ.get("REDIS_URL")
+    if not redis_url:
+        return None
+    try:
+        import redis
+        return redis.from_url(redis_url, decode_responses=True)
+    except Exception:
+        return None
+
+
+_redis_client = _get_redis()
+
+
+class _InMemoryRateLimiter:
+    """インメモリ・スライディングウィンドウ方式のレート制限。
+
+    シングルワーカー環境向け。マルチワーカーでは Redis 版を使用すること。
     """
 
     def __init__(self, max_requests: int, window: int):
@@ -173,7 +224,6 @@ class _RateLimiter:
         now = time.time()
         cutoff = now - self.window
         hits = self._hits[key]
-        # 古いエントリを除去
         self._hits[key] = [t for t in hits if t > cutoff]
         if len(self._hits[key]) >= self.max_requests:
             return False
@@ -185,20 +235,71 @@ class _RateLimiter:
         self._hits.clear()
 
 
+class _RedisRateLimiter:
+    """Redis ベースのスライディングウィンドウ方式レート制限。
+
+    マルチワーカー環境で共有カウンタとして機能する。
+    Sorted Set を使用し、window 秒以内のタイムスタンプを管理する。
+    """
+
+    def __init__(self, max_requests: int, window: int, prefix: str = "rl"):
+        self.max_requests = max_requests
+        self.window = window
+        self.prefix = prefix
+
+    def check(self, key: str) -> bool:
+        """制限内ならTrue、超過ならFalse。"""
+        if _redis_client is None:
+            return True  # Redis 不通時はフェイルオープン（別途インメモリで保護）
+        redis_key = f"{self.prefix}:{key}"
+        now = time.time()
+        cutoff = now - self.window
+        pipe = _redis_client.pipeline()
+        pipe.zremrangebyscore(redis_key, 0, cutoff)
+        pipe.zcard(redis_key)
+        pipe.zadd(redis_key, {str(now): now})
+        pipe.expire(redis_key, self.window + 1)
+        results = pipe.execute()
+        current_count = results[1]
+        return current_count < self.max_requests
+
+    def reset(self) -> None:
+        """全エントリをクリアする（テスト用）。"""
+        if _redis_client is not None:
+            for key in _redis_client.scan_iter(f"{self.prefix}:*"):
+                _redis_client.delete(key)
+
+
+def _create_limiter(max_requests: int, window: int, prefix: str = "rl"):
+    """環境に応じたレートリミッターを生成する。Redis があれば Redis 版を使用。"""
+    if _redis_client is not None:
+        return _RedisRateLimiter(max_requests, window, prefix)
+    return _InMemoryRateLimiter(max_requests, window)
+
+
 # login: 10回/分、mfa/verify: 5回/分
-_login_limiter = _RateLimiter(max_requests=10, window=60)
-_mfa_verify_limiter = _RateLimiter(max_requests=5, window=60)
+_login_limiter = _create_limiter(max_requests=10, window=60, prefix="rl:login")
+_mfa_verify_limiter = _create_limiter(max_requests=5, window=60, prefix="rl:mfa")
 
 
 def _get_client_ip(request: Request) -> str:
-    """リクエストからクライアントIPを取得する。"""
+    """リクエストからクライアントIPを取得する。
+
+    X-Forwarded-For は TRUSTED_PROXIES に含まれるプロキシからのリクエストのみ信頼する。
+    信頼済みプロキシ未設定の場合、ヘッダーは無視してクライアント直接IPを使用する。
+    """
+    direct_ip = request.client.host if request.client else "unknown"
+    if not _TRUSTED_PROXIES:
+        return direct_ip
+    if direct_ip not in _TRUSTED_PROXIES:
+        return direct_ip
     forwarded = request.headers.get("x-forwarded-for")
     if forwarded:
         return forwarded.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    return direct_ip
 
 
-def _check_rate_limit(request: Request, limiter: _RateLimiter) -> None:
+def _check_rate_limit(request: Request, limiter) -> None:
     """レート制限を確認し、超過時は429を返す。"""
     client_ip = _get_client_ip(request)
     if not limiter.check(client_ip):
@@ -214,7 +315,12 @@ def _check_rate_limit(request: Request, limiter: _RateLimiter) -> None:
 def _build_provider_from_request(
     config: ProviderConfigRequest,
     school_id: str | None = None,
-):
+) -> tuple:
+    """プロバイダーを構築する。
+
+    Returns:
+        (provider_instance, resolved_provider_name) タプル
+    """
     privacy_mask = PrivacyMaskConfig(
         **(config.privacy_mask.model_dump() if config.privacy_mask else {})
     )
@@ -247,8 +353,25 @@ def _load_session_for_user(
 
 def _require_admin(user: CurrentUser) -> None:
     """管理者権限を要求する。"""
-    if user.role != "admin":
+    if user.role not in {"admin", "superadmin"}:
         raise HTTPException(status_code=403, detail="管理者権限が必要です")
+
+
+def _require_admin_for_school(user: CurrentUser, school_id: str) -> None:
+    """管理者権限を要求し、対象学校へのアクセス権を検証する。
+
+    superadmin は全校アクセス可能、admin は自校のみ。
+    """
+    _require_admin(user)
+    if user.role != "superadmin" and user.school_id != school_id:
+        raise HTTPException(status_code=403, detail="他校のデータにはアクセスできません")
+
+
+def _store_refresh(jti: str, user_id: str, family_id: str) -> None:
+    """リフレッシュトークンをDBに記録する。"""
+    from auth import REFRESH_TOKEN_EXPIRE_DAYS
+    expires_at = (datetime.now(timezone.utc) + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS)).isoformat()
+    store_refresh_token(jti, user_id, family_id, expires_at)
 
 
 # --- Auth Endpoints ---
@@ -288,7 +411,8 @@ def login(request: LoginRequest, http_request: Request) -> dict[str, Any]:
     school_name = school.name if school else ""
 
     access_token = create_access_token(user.id, user.school_id, user.role)
-    refresh_token = create_refresh_token(user.id)
+    refresh_token, jti, family_id = create_refresh_token(user.id)
+    _store_refresh(jti, user.id, family_id)
 
     log_audit_event(
         action="login",
@@ -317,7 +441,11 @@ def login(request: LoginRequest, http_request: Request) -> dict[str, Any]:
 
 @app.post("/api/v1/auth/refresh")
 def refresh(request: RefreshRequest) -> dict[str, Any]:
-    """リフレッシュトークンから新しいアクセストークンを発行する。"""
+    """リフレッシュトークンから新しいアクセストークン+リフレッシュトークンを発行する。
+
+    トークンローテーション: 使用済みのリフレッシュトークンは即座に無効化される。
+    再利用が検知された場合（盗難疑い）、ファミリー全体が無効化される。
+    """
     try:
         payload = decode_token(request.refresh_token)
     except Exception:
@@ -330,9 +458,33 @@ def refresh(request: RefreshRequest) -> dict[str, Any]:
     if user is None or not user.is_active:
         raise HTTPException(status_code=401, detail="ユーザーが見つかりません")
 
+    # token_invalidated_at より前に発行されたリフレッシュトークンを拒否
+    if user.token_invalidated_at:
+        token_iat = payload.get("iat", 0)
+        invalidated_ts = int(datetime.fromisoformat(user.token_invalidated_at).timestamp())
+        if token_iat < invalidated_ts:
+            raise HTTPException(status_code=401, detail="トークンが失効しています。再ログインしてください。")
+
+    # jti によるトークンファミリー検証（DB にトークンがある場合）
+    jti = payload.get("jti")
+    family_id = payload.get("family_id")
+    if jti:
+        token_record = use_refresh_token(jti)
+        if token_record is None:
+            # revoke 済み or 不存在 → 盗難疑い
+            raise HTTPException(
+                status_code=401,
+                detail="リフレッシュトークンが無効化されています。再ログインしてください。",
+            )
+
+    # 新しいトークンペアを発行（ローテーション）
     access_token = create_access_token(user.id, user.school_id, user.role)
+    new_refresh, new_jti, new_family = create_refresh_token(user.id, family_id=family_id)
+    _store_refresh(new_jti, user.id, new_family)
+
     return {
         "access_token": access_token,
+        "refresh_token": new_refresh,
         "token_type": "bearer",
     }
 
@@ -362,6 +514,36 @@ def me(
             "mfa_enabled": user.mfa_enabled,
         },
     }
+
+
+@app.post("/api/v1/auth/change-password")
+def change_password_endpoint(
+    request: ChangePasswordRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+) -> dict[str, Any]:
+    """パスワードを変更する。現在のパスワードで再認証後、新パスワードを設定。
+
+    変更後は全トークンが無効化されるため、再ログインが必要。
+    """
+    user = get_user(current_user.user_id)
+    if user is None:
+        raise HTTPException(status_code=401, detail="ユーザーが見つかりません")
+
+    if not verify_password(request.current_password, user.hashed_password):
+        raise HTTPException(status_code=401, detail="現在のパスワードが正しくありません")
+
+    new_hashed = hash_password(request.new_password)
+    change_password(user.id, new_hashed)
+
+    log_audit_event(
+        action="change_password",
+        resource_type="user",
+        resource_id=user.id,
+        user_id=user.id,
+        school_id=user.school_id,
+    )
+
+    return {"message": "パスワードを変更しました。再ログインしてください。"}
 
 
 # --- MFA Endpoints ---
@@ -417,7 +599,8 @@ def mfa_verify(request: MfaVerifyRequest, http_request: Request) -> dict[str, An
     school_name = school.name if school else ""
 
     access_token = create_access_token(user.id, user.school_id, user.role)
-    refresh_token = create_refresh_token(user.id)
+    refresh_token, jti, family_id = create_refresh_token(user.id)
+    _store_refresh(jti, user.id, family_id)
 
     log_audit_event(
         action="login",
@@ -551,7 +734,8 @@ def get_audit_logs(
     offset: int = 0,
     current_user: CurrentUser = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """監査ログを取得する。テナントスコープ。"""
+    """監査ログを取得する。管理者以上のみ。テナントスコープ。"""
+    _require_admin(current_user)
     logs = list_audit_logs(
         school_id=current_user.school_id,
         action=action,
@@ -567,7 +751,12 @@ def get_audit_logs(
 def verify_audit_logs(
     current_user: CurrentUser = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """監査ログチェーンの整合性を検証する。"""
+    """監査ログチェーン全体の整合性を検証する（superadmin専用）。
+
+    チェーンはグローバル（全校混合）なので、全ログを対象に検証する。
+    """
+    if current_user.role != "superadmin":
+        raise HTTPException(status_code=403, detail="superadmin権限が必要です")
     is_valid, errors = verify_audit_chain()
     return {"is_valid": is_valid, "errors": errors}
 
@@ -635,7 +824,7 @@ def refine_rubric(
                 (ocr.student_id, ans.transcribed_text)
             )
 
-    provider = _build_provider_from_request(request.provider, school_id=current_user.school_id)
+    provider, _ = _build_provider_from_request(request.provider, school_id=current_user.school_id)
     result = provider.refine_rubric(rubric, ocr_answers_by_question)
 
     return {"questions": result.get("questions", [])}
@@ -768,9 +957,15 @@ def remove_session(
 def admin_purge_expired(
     current_user: CurrentUser = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """保存期間を超えたセッションを一括削除する（管理者用）。"""
+    """保存期間を超えたセッションを一括削除する（管理者用）。
+
+    テナント管理者は自校のみ、superadmin は全校対象。
+    """
     _require_admin(current_user)
-    purged = purge_expired_sessions()
+    if current_user.role == "superadmin":
+        purged = purge_expired_sessions(user_id=current_user.user_id)
+    else:
+        purged = purge_expired_sessions(school_id=current_user.school_id, user_id=current_user.user_id)
     return {"purged_count": len(purged), "session_ids": purged}
 
 
@@ -780,8 +975,8 @@ def admin_export_school(
     current_user: CurrentUser = Depends(get_current_user),
 ) -> dict[str, Any]:
     """学校の全データをエクスポートする（解約・データポータビリティ用）。"""
-    _require_admin(current_user)
-    data = export_school_data(school_id)
+    _require_admin_for_school(current_user, school_id)
+    data = export_school_data(school_id, user_id=current_user.user_id)
     if "error" in data:
         raise HTTPException(status_code=404, detail=data["error"])
     return data
@@ -792,8 +987,11 @@ def admin_delete_school(
     school_id: str,
     current_user: CurrentUser = Depends(get_current_user),
 ) -> dict[str, Any]:
-    """学校の全データを完全削除する（解約時）。"""
-    _require_admin(current_user)
+    """学校の全データを削除する（解約時）。
+
+    注意: 監査ログは規制遵守のため匿名化して保持される。
+    """
+    _require_admin_for_school(current_user, school_id)
     summary = delete_school_data(
         school_id,
         user_id=current_user.user_id,
@@ -863,18 +1061,19 @@ def run_ocr(
     try:
         rubric = rubric_from_dict(request.rubric)
         pdf_bytes = base64.b64decode(request.pdf_base64)
-        images = pdf_to_images(pdf_bytes)
+        images = pdf_to_images(pdf_bytes, submission_type=request.submission_type)
         student_groups = split_pages_by_student(images, rubric.pages_per_student)
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    provider = _build_provider_from_request(request.provider, school_id=current_user.school_id)
+    provider, resolved_provider = _build_provider_from_request(request.provider, school_id=current_user.school_id)
 
     ocr_results, errors = ocr_all_students(
         provider=provider,
         student_groups=student_groups,
         rubric=rubric,
         enable_two_stage=request.enable_two_stage,
+        submission_type=request.submission_type,
     )
 
     session.rubric_title = rubric.title
@@ -889,7 +1088,8 @@ def run_ocr(
         user_id=current_user.user_id,
         school_id=current_user.school_id,
         details={
-            "provider": request.provider.provider,
+            "requested_provider": request.provider.provider,
+            "resolved_provider": resolved_provider,
             "student_count": len(student_groups),
             "error_count": len(errors),
         },
@@ -899,6 +1099,84 @@ def run_ocr(
         "session": session.to_dict(),
         "errors": errors,
         "student_count": len(student_groups),
+    }
+
+
+class ColumnMappingRequest(BaseModel):
+    class_col: int | None = Field(None, ge=0)
+    number_col: int | None = Field(None, ge=0)
+    name_col: int | None = Field(None, ge=0)
+    question_cols: dict[str, int] = Field(default_factory=dict)
+    ignore_cols: list[int] = Field(default_factory=list)
+
+
+class CsvImportRequest(BaseModel):
+    session_id: str
+    rubric: dict[str, Any]
+    csv_content: str = Field(..., min_length=1, max_length=5_000_000)  # ~5MB上限
+    column_mapping: ColumnMappingRequest
+
+
+@app.post("/api/v1/runs/import-csv")
+def import_csv_endpoint(
+    request: CsvImportRequest,
+    current_user: CurrentUser = Depends(get_current_user),
+) -> dict[str, Any]:
+    session = _load_session_for_user(request.session_id, current_user)
+
+    try:
+        rubric = rubric_from_dict(request.rubric)
+    except Exception as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    from csv_importer import (
+        ColumnMapping,
+        convert_to_ocr_results,
+        parse_forms_csv,
+    )
+
+    try:
+        csv_data = parse_forms_csv(request.csv_content)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    # Pydantic で検証済みの ColumnMappingRequest → csv_importer の ColumnMapping に変換
+    cm = request.column_mapping
+    # question_cols の値（列インデックス）が非負であることを検証
+    for qid, col_idx in cm.question_cols.items():
+        if col_idx < 0:
+            raise HTTPException(status_code=400, detail=f"question_cols[{qid}] の列インデックスが負数です: {col_idx}")
+    mapping = ColumnMapping(
+        class_col=cm.class_col,
+        number_col=cm.number_col,
+        name_col=cm.name_col,
+        question_cols={str(k): v for k, v in cm.question_cols.items()},
+        ignore_cols=[i for i in cm.ignore_cols if i >= 0],
+    )
+
+    ocr_results, errors = convert_to_ocr_results(csv_data, mapping, rubric)
+
+    session.rubric_title = rubric.title
+    session.pages_per_student = rubric.pages_per_student
+    session.ocr_results = ocr_results
+    save_session(session)
+
+    log_audit_event(
+        action="import_csv",
+        resource_type="session",
+        resource_id=request.session_id,
+        user_id=current_user.user_id,
+        school_id=current_user.school_id,
+        details={
+            "student_count": len(ocr_results),
+            "error_count": len(errors),
+        },
+    )
+
+    return {
+        "session": session.to_dict(),
+        "errors": errors,
+        "student_count": len(ocr_results),
     }
 
 
@@ -914,7 +1192,7 @@ def run_horizontal(
     except Exception as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    provider = _build_provider_from_request(request.provider, school_id=current_user.school_id)
+    provider, resolved_provider = _build_provider_from_request(request.provider, school_id=current_user.school_id)
     errors = run_horizontal_grading(
         provider=provider,
         rubric=rubric,
@@ -933,7 +1211,8 @@ def run_horizontal(
         user_id=current_user.user_id,
         school_id=current_user.school_id,
         details={
-            "provider": request.provider.provider,
+            "requested_provider": request.provider.provider,
+            "resolved_provider": resolved_provider,
             "batch_size": request.batch_size,
             "verification": request.enable_verification,
             "error_count": len(errors),

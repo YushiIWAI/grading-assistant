@@ -129,10 +129,10 @@ class TestRateLimiting:
         assert resp.status_code == 429
 
     def test_rate_limiter_class_basic(self):
-        """_RateLimiterクラスの基本動作"""
-        from api.app import _RateLimiter
+        """_InMemoryRateLimiterクラスの基本動作"""
+        from api.app import _InMemoryRateLimiter
 
-        rl = _RateLimiter(max_requests=3, window=60)
+        rl = _InMemoryRateLimiter(max_requests=3, window=60)
         assert rl.check("ip1") is True
         assert rl.check("ip1") is True
         assert rl.check("ip1") is True
@@ -142,11 +142,41 @@ class TestRateLimiting:
         assert rl.check("ip2") is True
 
     def test_rate_limiter_reset(self):
-        """_RateLimiter.reset()でクリアされる"""
-        from api.app import _RateLimiter
+        """_InMemoryRateLimiter.reset()でクリアされる"""
+        from api.app import _InMemoryRateLimiter
 
-        rl = _RateLimiter(max_requests=1, window=60)
+        rl = _InMemoryRateLimiter(max_requests=1, window=60)
         assert rl.check("ip") is True
         assert rl.check("ip") is False
         rl.reset()
         assert rl.check("ip") is True
+
+    def test_trusted_proxy_restricts_forwarded_for(self):
+        """信頼済みプロキシ未設定時は X-Forwarded-For を無視する"""
+        from unittest.mock import MagicMock
+        from api import app as api_module
+
+        original = api_module._TRUSTED_PROXIES
+        try:
+            api_module._TRUSTED_PROXIES = set()
+            request = MagicMock()
+            request.client.host = "192.168.1.1"
+            request.headers = {"x-forwarded-for": "10.0.0.1"}
+            assert api_module._get_client_ip(request) == "192.168.1.1"
+        finally:
+            api_module._TRUSTED_PROXIES = original
+
+    def test_trusted_proxy_allows_forwarded_for(self):
+        """信頼済みプロキシからの X-Forwarded-For は使用する"""
+        from unittest.mock import MagicMock
+        from api import app as api_module
+
+        original = api_module._TRUSTED_PROXIES
+        try:
+            api_module._TRUSTED_PROXIES = {"192.168.1.1"}
+            request = MagicMock()
+            request.client.host = "192.168.1.1"
+            request.headers = {"x-forwarded-for": "10.0.0.1, 192.168.1.1"}
+            assert api_module._get_client_ip(request) == "10.0.0.1"
+        finally:
+            api_module._TRUSTED_PROXIES = original

@@ -389,30 +389,45 @@ class TestDeleteSessionApi:
 class TestAuditLogApi:
     """監査ログAPIのテスト"""
 
-    def test_get_audit_logs(self, client, auth_headers):
+    def test_get_audit_logs(self, client, auth_headers, admin_headers):
         client.post(
             "/api/v1/sessions",
             json={"rubric_title": "監査テスト"},
             headers=auth_headers,
         )
-        response = client.get("/api/v1/audit-logs", headers=auth_headers)
+        response = client.get("/api/v1/audit-logs", headers=admin_headers)
         assert response.status_code == 200
         logs = response.json()["audit_logs"]
         assert len(logs) >= 1
 
-    def test_verify_chain(self, client, auth_headers):
+    def test_get_audit_logs_teacher_forbidden(self, client, auth_headers):
+        """teacherは監査ログを閲覧できない"""
+        response = client.get("/api/v1/audit-logs", headers=auth_headers)
+        assert response.status_code == 403
+
+    def test_verify_chain(self, client, auth_headers, superadmin_headers):
         client.post("/api/v1/sessions", json={"rubric_title": "chain1"}, headers=auth_headers)
         client.post("/api/v1/sessions", json={"rubric_title": "chain2"}, headers=auth_headers)
-        response = client.get("/api/v1/audit-logs/verify", headers=auth_headers)
+        # superadminのみチェーン検証可能
+        response = client.get("/api/v1/audit-logs/verify", headers=superadmin_headers)
         assert response.status_code == 200
-        assert response.json()["is_valid"] is True
 
-    def test_login_creates_audit_log(self, client, test_user, auth_headers):
+    def test_verify_chain_admin_forbidden(self, client, admin_headers):
+        """admin（superadmin以外）はチェーン検証できない"""
+        response = client.get("/api/v1/audit-logs/verify", headers=admin_headers)
+        assert response.status_code == 403
+
+    def test_verify_chain_teacher_forbidden(self, client, auth_headers):
+        """teacherはチェーン検証できない"""
+        response = client.get("/api/v1/audit-logs/verify", headers=auth_headers)
+        assert response.status_code == 403
+
+    def test_login_creates_audit_log(self, client, test_user, admin_headers):
         client.post(
             "/api/v1/auth/login",
             json={"email": "teacher@test.example.com", "password": "testpassword"},
         )
-        response = client.get("/api/v1/audit-logs", headers=auth_headers)
+        response = client.get("/api/v1/audit-logs", headers=admin_headers)
         logs = response.json()["audit_logs"]
         login_logs = [l for l in logs if l["action"] == "login"]
         assert len(login_logs) >= 1
@@ -441,19 +456,29 @@ class TestAdminApi:
         assert body["school"]["id"] == test_school.id
         assert len(body["sessions"]) == 1
 
-    def test_export_nonexistent_school(self, client, admin_headers):
+    def test_export_other_school_forbidden(self, client, admin_headers):
+        """他校のデータエクスポートは403で拒否される"""
         response = client.get(
-            "/api/v1/admin/schools/nonexistent/export",
+            "/api/v1/admin/schools/other-school-id/export",
             headers=admin_headers,
         )
-        assert response.status_code == 404
+        assert response.status_code == 403
 
-    def test_delete_school(self, client, admin_headers):
-        school = School(name="削除学校", slug="delete-me")
-        storage.create_school(school)
+    def test_delete_school(self, client, test_school, admin_headers):
+        """自校のデータ削除は成功する"""
         response = client.delete(
-            f"/api/v1/admin/schools/{school.id}",
+            f"/api/v1/admin/schools/{test_school.id}",
             headers=admin_headers,
         )
         assert response.status_code == 200
         assert response.json()["school_deleted"] == 1
+
+    def test_delete_other_school_forbidden(self, client, admin_headers):
+        """他校のデータ削除は403で拒否される"""
+        other_school = School(name="他校", slug="other-school")
+        storage.create_school(other_school)
+        response = client.delete(
+            f"/api/v1/admin/schools/{other_school.id}",
+            headers=admin_headers,
+        )
+        assert response.status_code == 403

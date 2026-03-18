@@ -58,14 +58,22 @@ class TestAccessToken:
 
 class TestRefreshToken:
     def test_create_and_decode(self):
-        token = auth.create_refresh_token("user-1")
+        token, jti, family_id = auth.create_refresh_token("user-1")
         payload = auth.decode_token(token)
         assert payload["sub"] == "user-1"
         assert payload["type"] == "refresh"
+        assert payload["jti"] == jti
+        assert payload["family_id"] == family_id
         assert "school_id" not in payload
 
     def test_expired_refresh(self):
         with patch.object(auth, "REFRESH_TOKEN_EXPIRE_DAYS", -1):
-            token = auth.create_refresh_token("user-1")
+            token, _, _ = auth.create_refresh_token("user-1")
         with pytest.raises(pyjwt.ExpiredSignatureError):
             auth.decode_token(token)
+
+    def test_family_id_inherited(self):
+        """family_id を指定すると引き継がれる"""
+        _, _, family1 = auth.create_refresh_token("user-1")
+        _, _, family2 = auth.create_refresh_token("user-1", family_id=family1)
+        assert family1 == family2

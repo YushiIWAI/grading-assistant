@@ -178,6 +178,27 @@ def admin_headers(admin_user):
     return {"Authorization": f"Bearer {token}"}
 
 
+@pytest.fixture
+def superadmin_user(test_db, test_school):
+    """テスト用superadminユーザー"""
+    user = User(
+        school_id=test_school.id,
+        email="superadmin@test.example.com",
+        hashed_password=hash_password("superadminpassword"),
+        display_name="テストスーパー管理者",
+        role="superadmin",
+    )
+    storage.create_user(user)
+    return user
+
+
+@pytest.fixture
+def superadmin_headers(superadmin_user):
+    """superadmin用のAuthorizationヘッダー"""
+    token = create_access_token(superadmin_user.id, superadmin_user.school_id, superadmin_user.role)
+    return {"Authorization": f"Bearer {token}"}
+
+
 @pytest.fixture(autouse=True)
 def _reset_rate_limiters():
     """各テスト実行前にレート制限をリセットする。"""
