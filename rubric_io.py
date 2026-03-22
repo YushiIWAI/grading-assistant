@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import yaml
 
-from models import Question, Rubric, SubQuestion
+from models import GradingOptions, Question, Rubric, SubQuestion
 
 
 def rubric_from_dict(data: dict) -> Rubric:
@@ -29,12 +29,26 @@ def rubric_from_dict(data: dict) -> Rubric:
             model_answer=qdata.get("model_answer", ""),
             sub_questions=subs,
         ))
+    grading_options_data = data.get("grading_options")
+    if isinstance(grading_options_data, dict):
+        grading_options = GradingOptions(
+            penalize_typos=grading_options_data.get("penalize_typos", False),
+            penalize_grammar=grading_options_data.get("penalize_grammar", False),
+            penalize_wrong_names=grading_options_data.get("penalize_wrong_names", False),
+            penalize_hiragana=grading_options_data.get("penalize_hiragana", False),
+            penalty_per_error=grading_options_data.get("penalty_per_error", 1.0),
+            penalty_cap_ratio=grading_options_data.get("penalty_cap_ratio", 0.5),
+        )
+    else:
+        grading_options = GradingOptions()
+
     return Rubric(
         title=exam.get("title", "無題の試験"),
         total_points=exam.get("total_points", 100),
         pages_per_student=exam.get("pages_per_student", 1),
         questions=questions,
         notes=data.get("notes", ""),
+        grading_options=grading_options,
     )
 
 
@@ -79,6 +93,16 @@ def rubric_to_yaml(rubric: Rubric) -> str:
                 for sq in q.sub_questions
             ]
         data["questions"].append(qd)
+    # grading_options: いずれかの減点設定が有効な場合のみ出力
+    go = rubric.grading_options
+    if go.penalize_typos or go.penalize_grammar or go.penalize_wrong_names:
+        data["grading_options"] = {
+            "penalize_typos": go.penalize_typos,
+            "penalize_grammar": go.penalize_grammar,
+            "penalize_wrong_names": go.penalize_wrong_names,
+            "penalty_per_error": go.penalty_per_error,
+            "penalty_cap_ratio": go.penalty_cap_ratio,
+        }
     return yaml.dump(data, allow_unicode=True, default_flow_style=False, sort_keys=False)
 
 

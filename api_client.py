@@ -351,6 +351,7 @@ def run_horizontal_grading(
     batch_size: int,
     enable_verification: bool = False,
     student_ids_to_grade: list[str] | None = None,
+    is_typed: bool = False,
 ) -> tuple[ScoringSession, list[str]]:
     save_session(session)
     response = _request(
@@ -363,6 +364,7 @@ def run_horizontal_grading(
             "batch_size": batch_size,
             "enable_verification": enable_verification,
             "student_ids_to_grade": student_ids_to_grade,
+            "is_typed": is_typed,
         },
     )
     if response.is_error:

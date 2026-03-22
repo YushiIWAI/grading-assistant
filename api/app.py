@@ -155,6 +155,7 @@ class HorizontalGradingRunRequest(BaseModel):
     batch_size: int = Field(default=15, ge=1, le=100)
     enable_verification: bool = False
     student_ids_to_grade: list[str] | None = None
+    is_typed: bool = False
 
 
 from config import validate_secrets
@@ -1154,7 +1155,7 @@ def import_csv_endpoint(
         ignore_cols=[i for i in cm.ignore_cols if i >= 0],
     )
 
-    ocr_results, errors = convert_to_ocr_results(csv_data, mapping, rubric)
+    ocr_results, errors, _teacher_scores = convert_to_ocr_results(csv_data, mapping, rubric)
 
     session.rubric_title = rubric.title
     session.pages_per_student = rubric.pages_per_student
@@ -1201,6 +1202,7 @@ def run_horizontal(
         batch_size=request.batch_size,
         student_ids_to_grade=request.student_ids_to_grade,
         enable_verification=request.enable_verification,
+        is_typed=request.is_typed,
     )
     save_session(session)
 

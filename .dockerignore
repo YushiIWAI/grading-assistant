@@ -1,0 +1,36 @@
+# Student data
+data/
+output/
+test_data/
+*.pdf
+session_*.json
+
+# Environment
+.env
+.env.*
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+venv/
+
+# Git
+.git/
+.gitignore
+
+# OS
+.DS_Store
+
+# IDE / Claude
+.claude/
+.handoff.md
+
+# Docker
+docker-compose*.yml
+
+# Tests (not needed in production image)
+tests/
+evaluation/

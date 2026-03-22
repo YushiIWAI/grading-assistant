@@ -47,21 +47,22 @@ class RateLimiter:
 
     def wait(self):
         """レート制限内で呼び出しが許可されるまでブロックする。"""
-        with self._lock:
-            now = time.time()
-            while self._timestamps and self._timestamps[0] <= now - self.window:
-                self._timestamps.popleft()
-
-            if len(self._timestamps) >= self.max_calls:
-                sleep_time = self._timestamps[0] + self.window - now
-                if sleep_time > 0:
-                    logger.info("レート制限: %.1f秒待機します", sleep_time)
-                    time.sleep(sleep_time)
+        while True:
+            with self._lock:
                 now = time.time()
                 while self._timestamps and self._timestamps[0] <= now - self.window:
                     self._timestamps.popleft()
 
-            self._timestamps.append(time.time())
+                if len(self._timestamps) < self.max_calls:
+                    self._timestamps.append(time.time())
+                    return
+
+                sleep_time = self._timestamps[0] + self.window - now
+
+            # ロック外でスリープ（他スレッドをブロックしない）
+            if sleep_time > 0:
+                logger.info("レート制限: %.1f秒待機します", sleep_time)
+                time.sleep(sleep_time)
 
 
 # ============================================================
@@ -220,13 +221,31 @@ HORIZONTAL_GRADING_SYSTEM_PROMPT = """\
 - あなたの採点は「仮採点」であり、最終判断は教員が行います
 - 全学生に対して同一の基準を厳密に適用してください
 - 学生間の相対的な出来を意識し、一貫性のある採点を行ってください
-- 本文のキーワードや概念を正確に用いた説明と、日常語による表面的な言い換えを明確に区別してください
 
-キーワードの踏まえ方の評価基準（記述式で重要）:
-- 本文のキーワードや概念を正確に使用している → その要素は満点
-- 本文の概念は捉えているが、独自の学術的表現で言い換えている → その要素はおおむね満点（微減）
-- 概念の方向性は合っているが、日常語レベルの表面的な言い換えに留まる → その要素は半分以下の部分点
-- 本文の概念と異なる一般論に読み替えている → その要素は0点
+★ 内容評価と表現評価は必ず分離すること（最重要ルール）:
+採点は「内容点」→「形式減点」の2段階で行う。この順序を厳守すること。
+- 第1段階【内容点】: 採点基準の各要素に対して、概念として正しく言及しているかのみで判定する。
+  ひらがな・話し言葉・口語表現・文体の稚拙さは内容点に一切影響しない。
+  例: 「かれくさ」=「枯れ草」、「びんぼう」=「貧しい」、「おちぶれた」=「没落した」
+  → いずれも概念として同じであり、内容点は同等に扱う。
+- 第2段階【形式減点】: 内容点を確定した後に、文末形式・表記・文法の減点を別途適用する。
+  内容点と形式減点を混同してはならない。
+
+要素の該当判定（記述式で重要）:
+- 採点基準の各要素は「その概念に言及しているか」で判定する。本文の正確な引用は不要。
+- 本文のキーワードをそのまま使用 → その要素は満点
+- 本文の概念を別の言葉で正確に表現している → その要素は満点（表現形式による減点はしない）
+- 概念の方向性は合っているが、曖昧・漠然とした表現に留まる → その要素は半分程度の部分点
+  例: 「新しい社会」を「目指していくべきもの」と曖昧に表現 → 部分点
+  例: 「草とかが生えてる」→屋根の状態に触れているが具体性不足 → 部分点
+- 本文の概念とは異なる一般論・別の概念に置き換えている → その要素は0点
+  例: 「希望」だけでは「新しい社会の実現」とは異なる
+
+本文の丸写し・一言回答の扱い:
+- 本文をそのまま引用・丸写ししただけで、設問が求める「説明」になっていない → 0点
+  （引用すること自体は答えではない。引用内容が何を意味するか説明する必要がある）
+- 一言・単語のみの回答で、説明として成立していない → 0点
+  例: 「希望。」だけでは「どのようなものか」に答えていない
 
 的外れ（off_topic）でも記述がある場合の扱い:
 - 完全に白紙・意味不明 → 0点
@@ -236,8 +255,9 @@ HORIZONTAL_GRADING_SYSTEM_PROMPT = """\
 
 形式点（文末表現等）の扱い:
 - 形式点は加点方式ではなく減点方式で扱う
-- 内容が正しい解答で文末形式（「〜から。」「〜こと。」等）を守っていない場合 → -1点程度の減点
+- 内容が正しい解答で文末形式（「〜から。」「〜こと。」等）を守っていない場合 → -1点の減点
 - 内容が的外れな解答には、形式を守っていても点数を与えてはならない
+- 形式減点は内容点の確定後に適用する（内容の判定時に形式を考慮しない）
 
 confidence の基準:
 - high: 漢字・選択問題の正誤判定、または記述式で採点基準の全要素が明確に該当/非該当の場合
@@ -264,10 +284,32 @@ review_reason（needs_review が true の場合は必須）:
 - 良い例: 「要素B『枠組みが揺さぶられる』を『考えが変わる』と日常語で言い換えている。概念は近いが本文のキーワードを踏まえていない。5点中3点としたが、より厳しく1点とすべきか教員判断をお願いします」
 - 良い例: 「的外れな内容で0点としたが、本文の一部に触れている可能性もあり、部分点付与の判断を教員にお願いします」
 - 悪い例: 「部分点の判断が微妙」（←具体性がない）
+
+feedback（生徒向けフィードバック）:
+- 各生徒の解答に対して、生徒本人が読むことを前提としたフィードバックを書いてください
+- comment は教員向けの採点根拠、feedback は生徒に返却するコメントという役割分担です
+- 以下の2点を含めること:
+  1. 採点基準の各要素に対する評価（どの要素が書けていて、どの要素が不足しているか）
+  2. その生徒の答案に即した具体的な改善アドバイス（「こう書くとより良い答案になる」という方向性）
+- 良い解答には、何がどう良かったかを採点基準に即して伝えてください
+- 不足がある解答には、どの要素が足りないかを明示し、本文のどこに着目すれば改善できるかを示してください
+- 的外れな解答には、設問が何を求めているかを端的に示し、正しい方向を提示してください
+- 空欄や白紙には「本文のこの部分を読み直してみよう」等の具体的な手がかりを示してください
+- 3-5文程度で書くこと。過度に簡潔すぎず、かつ冗長にならない分量を心がけてください
+- 専門用語を過剰に避ける必要はありませんが、文脈なしでは通じない術語には簡潔な説明を添えてください
 """
 
 VERIFICATION_SYSTEM_PROMPT = """\
 あなたは国語科の採点検証者です。別の採点者による採点結果を独立に検証します。
+
+★ 検証の最重要原則 — 内容評価と表現評価の分離:
+採点者が以下の誤りを犯していないか特に注意して検証すること:
+- ひらがな・話し言葉・口語表現を理由に内容点を下げていないか
+  例: 「かれくさ」=「枯れ草」であり、概念として同じなら内容点は同等
+- 本文の正確な引用がないことを理由に要素を不認定としていないか
+  概念として同じ内容に触れていれば、表現形式に関わらず要素は認定すべき
+- 本文の丸写し・一言回答に不当な部分点を与えていないか
+  設問が求める「説明」になっていなければ0点
 
 以下の観点で検証してください:
 1. コメントの内容と得点が整合しているか（コメントで要素の欠落を指摘しながら高得点を付けていないか）
@@ -275,9 +317,15 @@ VERIFICATION_SYSTEM_PROMPT = """\
 3. 部分点の配分が基準の目安に沿っているか
 4. 満点・0点の判定に見落としがないか
 5. 学生間で類似の解答に対して一貫した採点がされているか
+6. 内容点と形式減点が正しく分離されているか（内容の判定時に表現・形式を混同していないか）
 
 得点を変更する場合は、変更理由を明記してください。
 得点の妥当性に迷う場合は needs_review を true にしてください。
+
+feedback（生徒向けフィードバック）:
+- 得点を変更した場合は、修正後の得点に基づいた生徒向けフィードバックも書いてください
+- 得点を変更しなかった場合は必ず空文字列にしてください
+- 変更時のフィードバックは、採点基準の要素ごとの評価と改善アドバイスを含めた3-5文で書いてください
 """
 
 
@@ -735,8 +783,11 @@ def parse_ocr_result(
 DEFAULT_BATCH_SIZE = 15
 
 
-def recommend_batch_size(rubric: Rubric) -> tuple[int, str]:
+def recommend_batch_size(rubric: Rubric, is_typed: bool = False) -> tuple[int, str]:
     """ルーブリック内容からバッチサイズの推奨値を算出する。
+
+    Args:
+        is_typed: テキスト入力（CSV/Classroom）の場合True。画像OCRより軽いため大きめバッチ可。
 
     Returns:
         (recommended_size, reason)
@@ -751,26 +802,36 @@ def recommend_batch_size(rubric: Rubric) -> tuple[int, str]:
         len(q.sub_questions) for q in rubric.questions if q.sub_questions
     )
 
-    # 記述問題が多いほどバッチは小さく
-    if descriptive_count >= 3:
-        size = 8
-        reason = f"記述問題が{descriptive_count}問あるため小さめ推奨"
-    elif descriptive_count >= 1:
-        # 記述が1-2問、小問の多さも考慮
-        if total_sub_questions > 10:
-            size = 12
-            reason = f"記述{descriptive_count}問 + 小問{total_sub_questions}問で中程度"
+    if is_typed:
+        # テキスト入力: プロンプトが軽いため大きめバッチが可能
+        if descriptive_count >= 3:
+            size = 25
+            reason = f"テキスト入力 + 記述{descriptive_count}問"
+        elif descriptive_count >= 1:
+            size = 30
+            reason = f"テキスト入力 + 記述{descriptive_count}問（大きめバッチ可）"
         else:
-            size = 12
-            reason = f"記述{descriptive_count}問を含むため中程度推奨"
+            size = 40
+            reason = f"テキスト入力 + 短答のみ（一括処理可能）"
     else:
-        # 短答のみ
-        if total_sub_questions > 15:
-            size = 18
-            reason = f"短答のみ（小問{total_sub_questions}問）のため大きめ可能"
+        # 手書きOCR: 保守的なバッチサイズ
+        if descriptive_count >= 3:
+            size = 8
+            reason = f"記述問題が{descriptive_count}問あるため小さめ推奨"
+        elif descriptive_count >= 1:
+            if total_sub_questions > 10:
+                size = 12
+                reason = f"記述{descriptive_count}問 + 小問{total_sub_questions}問で中程度"
+            else:
+                size = 12
+                reason = f"記述{descriptive_count}問を含むため中程度推奨"
         else:
-            size = 20
-            reason = f"短答{short_answer_count}問のみのため大きめ推奨"
+            if total_sub_questions > 15:
+                size = 18
+                reason = f"短答のみ（小問{total_sub_questions}問）のため大きめ可能"
+            else:
+                size = 20
+                reason = f"短答{short_answer_count}問のみのため大きめ推奨"
 
     return size, reason
 
@@ -863,30 +924,34 @@ def build_rubric_review_prompt(rubric: Rubric) -> str:
 
 RUBRIC_REFINE_SYSTEM_PROMPT = """\
 あなたは国語の採点基準精緻化AIです。
-実際の学生の解答を読み、採点時に判断が分かれそうな具体的なケースを抽出し、
-教員に確認すべきポイントを質問として提示します。
+実際の学生の解答を読み、回答パターンを抽出・分類し、
+教員に確認すべきポイントを**パターン単位で**質問として提示します。
 
 目的:
 - 実際の答案に基づいて、採点基準の曖昧な点を事前に解消する
-- 「こういう言い回しの解答をどう扱うか」を教員と事前にすり合わせる
+- 似た方向性の解答をパターンとしてまとめ、教員の確認回数を最小化する
 - 採点のブレを最小化する
 
 手順:
 1. まず全学生の解答を通読し、解答のバリエーションを把握する
-2. 模範解答と比較して「合っているとも外れているとも言いにくい」ボーダーラインの解答を特定する
-3. そのボーダーラインケースを具体的に引用しつつ、教員に判断を仰ぐ質問を作成する
+2. 似た方向性・言い回しの解答をパターンとしてグルーピングする
+3. 模範解答と比較して「合っているとも外れているとも言いにくい」ボーダーラインのパターンを特定する
+4. パターンごとに代表的な解答例を2-3個引用しつつ、教員に判断を仰ぐ質問を作成する
 
 質問の観点:
-1. 言い換え許容: 模範解答のキーワードを使わず同じ概念を表現している場合
-2. 部分的正答: 複数の要素のうち一部のみ正しい場合
-3. 独自の解釈: 模範解答とは異なるが一理ある解釈の場合
-4. 表現の質: 概念は合っているが表現が曖昧・冗長な場合
-5. 想定外の論点: 採点基準にない視点だが的確な指摘の場合
+1. 言い換え許容: 模範解答のキーワードを使わず同じ概念を表現しているパターン
+2. 部分的正答: 複数の要素のうち一部のみ正しいパターン
+3. 独自の解釈: 模範解答とは異なるが一理ある解釈のパターン
+4. 表現の質: 概念は合っているが表現が曖昧・冗長なパターン
+5. 想定外の論点: 採点基準にない視点だが的確な指摘のパターン
 
 重要:
-- 質問は必ず**実際の学生の解答を引用**して作成すること
-- 抽象的な質問は不要。「この解答は○点ですか？」のような具体的な質問にすること
+- 個々の学生の解答を1件ずつ聞くのではなく、**同じ方向性の解答群をパターンとしてまとめて**質問すること
+- 各パターンには代表的な解答例を2-3個引用し、該当人数を明記すること
+- 明らかに正答・明らかに誤答のパターンは除外し、判断が分かれるパターンのみ質問すること
 - 短答問題（漢字の読み等）は対象外。記述式の設問のみ分析すること
+- 各設問について最大3パターンまでに絞ること
+- 判断が分かれるパターンが見つからなかった場合は、空の配列 `"questions": []` を返してください
 
 回答形式:
 以下のJSON形式で回答してください。JSONのみを出力してください。
@@ -897,8 +962,12 @@ RUBRIC_REFINE_SYSTEM_PROMPT = """\
     {
       "question_id": "対象の設問ID（数字のみ。例: \"2\"。「問」は付けない）",
       "aspect": "質問の観点（上記1-5のいずれか）",
-      "student_answer": "実際の学生の解答（引用）",
-      "student_id": "解答した学生のID",
+      "pattern_label": "パターンの簡潔な名前（例: \"人間の弱さ系の言い換え\"）",
+      "count": 8,
+      "example_answers": [
+        {"student_id": "S001", "text": "人間の弱さを描いている"},
+        {"student_id": "S012", "text": "人の脆さを表現している"}
+      ],
       "question": "教員への具体的な質問",
       "options": ["選択肢A", "選択肢B", "選択肢C"]
     }
@@ -957,12 +1026,40 @@ def build_rubric_refine_prompt(
         "",
         "## 指示",
         f"上記の記述式{descriptive_count}問について、実際の学生の解答を読み、",
-        "採点時に判断が分かれそうなケースを具体的に指摘してください。",
-        "各設問について1〜3個の質問を生成してください。",
-        "質問には必ず実際の学生の解答を引用してください。",
+        "似た方向性の解答をパターンとしてグルーピングした上で、",
+        "採点時に判断が分かれそうなパターンを指摘してください。",
+        "各設問について最大3パターンまでに絞ってください。",
+        "各パターンには代表的な解答例を2-3個引用し、該当人数を明記してください。",
     ])
 
     return "\n".join(lines)
+
+
+def _build_grading_options_prompt(grading_options) -> str:
+    """GradingOptionsからプロンプト用の指示文を生成する。"""
+    if grading_options is None:
+        return ""
+    parts = []
+    targets = []
+    if grading_options.penalize_typos:
+        targets.append("誤字・脱字")
+    if grading_options.penalize_grammar:
+        targets.append("文法の誤り（主語と述語のねじれ、助詞の誤用等）")
+    if grading_options.penalize_wrong_names:
+        targets.append("人名・用語の表記ミス（漢字の書き間違い等。内容として間違った人名・用語は内容の採点で対応し、ここでは減点しないこと）")
+    if grading_options.penalize_hiragana:
+        targets.append("本文中で漢字表記されている語をひらがなで書いている場合（例: 本文「枯れ草」→解答「かれくさ」、本文「没落」→解答「ぼつらく」等。ただし内容点には影響させず、表記の減点としてのみ扱うこと）")
+    if not targets:
+        return ""
+    penalty = grading_options.penalty_per_error
+    cap = int(grading_options.penalty_cap_ratio * 100)
+    parts.append("## 表記・文法の減点ルール（教員設定）")
+    parts.append(f"以下の項目は減点対象です（1箇所につき-{penalty}点、各設問の配点の{cap}%を上限）:")
+    for t in targets:
+        parts.append(f"- {t}")
+    parts.append("内容の採点（要素ごとの配点）を先に行い、その後に表記・文法の減点を適用してください。")
+    parts.append("comment に減点した箇所と理由を明記してください。")
+    return "\n".join(parts)
 
 
 def build_horizontal_grading_prompt(
@@ -971,11 +1068,13 @@ def build_horizontal_grading_prompt(
     students_answers: list[tuple[str, str, str]],
     reference_info: list[dict] | None = None,
     notes: str = "",
+    grading_options=None,
 ) -> str:
     """横断採点プロンプト: 1問に対して複数学生の解答を同時に採点する。
 
     Args:
         students_answers: 各学生の (student_id, student_name, transcribed_text) リスト
+        grading_options: GradingOptions（表記・文法の減点設定）
     """
     lines = [
         f"# 試験: {rubric_title}",
@@ -998,6 +1097,10 @@ def build_horizontal_grading_prompt(
 
     if notes:
         lines.append(f"\n## 採点上の注意\n{notes.strip()}")
+
+    options_prompt = _build_grading_options_prompt(grading_options)
+    if options_prompt:
+        lines.append(f"\n{options_prompt}")
 
     if reference_info:
         lines.extend([
@@ -1032,7 +1135,8 @@ def build_horizontal_grading_prompt(
         score_fmt = (
             '      "scores": [\n'
             '        {"question_id": "小問ID", "score": 得点, "max_points": 配点, '
-            '"comment": "採点根拠", "confidence": "high/medium/low", '
+            '"comment": "採点根拠", "feedback": "生徒向けフィードバック", '
+            '"confidence": "high/medium/low", '
             '"needs_review": true/false, "review_reason": "要確認の場合、具体的な迷いの内容"}\n'
             "      ]"
         )
@@ -1041,7 +1145,8 @@ def build_horizontal_grading_prompt(
             f'      "question_id": "{question.id}",\n'
             '      "score": 得点,\n'
             f'      "max_points": {question.max_points},\n'
-            '      "comment": "採点の根拠",\n'
+            '      "comment": "採点の根拠（教員向け）",\n'
+            '      "feedback": "生徒向けフィードバック（改善アドバイス）",\n'
             '      "confidence": "high/medium/low",\n'
             '      "needs_review": true/false,\n'
             '      "review_reason": "needs_reviewがtrueの場合、教員に確認したい具体的な判断ポイント"'
@@ -1126,6 +1231,7 @@ def build_verification_prompt(
         '      "verified_score": 検証後の得点,',
         '      "score_changed": true/false,',
         '      "verification_comment": "検証コメント（変更理由または妥当と判断した根拠）",',
+        '      "feedback": "得点変更時の生徒向けフィードバック（変更なしなら空文字列）",',
         '      "confidence": "high/medium/low",',
         '      "needs_review": true/false,',
         '      "review_reason": "needs_reviewがtrueの場合、教員に確認したい具体的な判断ポイント"',
@@ -1148,14 +1254,17 @@ def parse_verification_result(
     verified: dict[str, dict] = {}
 
     for entry in result.get("results", []):
-        sid = str(entry.get("student_id", ""))
-        if sid not in expected_student_ids:
+        raw_sid = str(entry.get("student_id", ""))
+        sid = _resolve_student_id(raw_sid, expected_student_ids)
+        if sid is None:
+            logger.warning("検証: student_id '%s' を期待IDリストにマッチできませんでした", raw_sid)
             continue
         raw_score = float(entry.get("verified_score", 0))
         verified[sid] = {
             "verified_score": max(0.0, min(raw_score, max_points)),
             "score_changed": bool(entry.get("score_changed", False)),
             "verification_comment": entry.get("verification_comment", ""),
+            "feedback": entry.get("feedback", ""),
             "confidence": entry.get("confidence", "medium"),
             "needs_review": entry.get("needs_review", False),
             "review_reason": entry.get("review_reason", ""),
@@ -1175,6 +1284,74 @@ def parse_verification_result(
     return verified
 
 
+def _normalize_sid(sid: str) -> str:
+    """student_idを正規化する。スペース・ハイフン・アンダースコアを統一し、小文字化。"""
+    import re
+    s = sid.strip().lower()
+    # 括弧以降を除去（AIが "1-12（渡辺陽菜）" のように名前を付加する場合がある）
+    s = re.split(r'[（(]', s, maxsplit=1)[0].strip()
+    # "S"プレフィクスを除去
+    if s.startswith("s") and len(s) > 1 and (s[1].isdigit() or s[1] in "-_ "):
+        s = s[1:]
+    # 区切り文字を統一（ハイフンに）
+    s = re.sub(r'[\s_]+', '-', s)
+    return s
+
+
+def _resolve_student_id(raw_sid: str, expected_ids: list[str]) -> str | None:
+    """API応答のstudent_idを期待IDリストとマッチさせる。
+
+    AIが「1-1」ではなく「1 1 山田太郎」のようにIDと名前を混同して返す場合に対応。
+    一意にマッチしない場合は None を返す（needs_review にフォールバック）。
+    """
+    raw_sid = raw_sid.strip()
+    if not raw_sid:
+        return None
+    # 完全一致
+    if raw_sid in expected_ids:
+        return raw_sid
+
+    # 正規化して比較（"1 1 山田太郎" → "1-1-山田太郎", "1-1" → "1-1"）
+    norm_raw = _normalize_sid(raw_sid)
+
+    # Pass 1: 正規化後の完全一致
+    for eid in expected_ids:
+        if norm_raw == _normalize_sid(eid):
+            return eid
+
+    # Pass 2: 正規化後の先頭一致（一意の場合のみ返す）
+    prefix_candidates = []
+    for eid in expected_ids:
+        norm_eid = _normalize_sid(eid)
+        if norm_raw.startswith(norm_eid + "-") or norm_raw.startswith(norm_eid + " "):
+            prefix_candidates.append(eid)
+        elif norm_eid.startswith(norm_raw + "-") or norm_eid.startswith(norm_raw + " "):
+            prefix_candidates.append(eid)
+    if len(prefix_candidates) == 1:
+        return prefix_candidates[0]
+    if prefix_candidates:
+        logger.warning(
+            "_resolve_student_id: '%s' が先頭一致で複数候補にマッチ: %s",
+            raw_sid, prefix_candidates,
+        )
+        return None
+
+    # Pass 3: 部分一致（一意の場合のみ返す）
+    candidates = []
+    for eid in expected_ids:
+        if eid in raw_sid or raw_sid in eid:
+            candidates.append(eid)
+    if len(candidates) == 1:
+        return candidates[0]
+    if candidates:
+        logger.warning(
+            "_resolve_student_id: '%s' が部分一致で複数候補にマッチ: %s",
+            raw_sid, candidates,
+        )
+
+    return None
+
+
 def parse_horizontal_grading_result(
     result: dict,
     question: Question,
@@ -1191,8 +1368,10 @@ def parse_horizontal_grading_result(
             sub_points_map[str(sq.id)] = float(sq.points)
 
     for entry in result.get("results", []):
-        sid = entry.get("student_id", "")
-        if sid not in expected_student_ids:
+        raw_sid = entry.get("student_id", "")
+        sid = _resolve_student_id(raw_sid, expected_student_ids)
+        if sid is None:
+            logger.warning("横断採点: student_id '%s' を期待IDリストにマッチできませんでした", raw_sid)
             continue
 
         if question.sub_questions:
@@ -1210,6 +1389,7 @@ def parse_horizontal_grading_result(
                     max_points=mp,
                     transcribed_text="",
                     comment=s.get("comment", ""),
+                    feedback=s.get("feedback", ""),
                     confidence=s.get("confidence", "medium"),
                     needs_review=s.get("needs_review", False),
                     review_reason=s.get("review_reason", ""),
@@ -1224,6 +1404,7 @@ def parse_horizontal_grading_result(
                 max_points=mp,
                 transcribed_text="",
                 comment=entry.get("comment", ""),
+                feedback=entry.get("feedback", ""),
                 confidence=entry.get("confidence", "medium"),
                 needs_review=entry.get("needs_review", False),
                 review_reason=entry.get("review_reason", ""),
@@ -1625,6 +1806,8 @@ def grade_question_horizontally(
     reference_info: list[dict] | None = None,
     notes: str = "",
     batch_size: int = DEFAULT_BATCH_SIZE,
+    is_typed: bool = False,
+    grading_options=None,
 ) -> tuple[dict[str, list[QuestionScore]], list[str]]:
     """1問を全学生分、バッチで横断採点する。"""
     all_scores: dict[str, list[QuestionScore]] = {}
@@ -1645,6 +1828,8 @@ def grade_question_horizontally(
                 students_answers=batch,
                 reference_info=reference_info,
                 notes=notes,
+                is_typed=is_typed,
+                grading_options=grading_options,
             )
             batch_scores = parse_horizontal_grading_result(result, question, expected_ids)
             all_scores.update(batch_scores)
@@ -1682,6 +1867,7 @@ def verify_question_scores(
     students_answers: list[tuple[str, str, str]],
     notes: str = "",
     batch_size: int = VERIFICATION_BATCH_SIZE,
+    is_typed: bool = False,
 ) -> list[str]:
     """初回採点結果を検証し、score_changed の場合にスコアを更新する。
 
@@ -1692,15 +1878,21 @@ def verify_question_scores(
     # student_id → (student_name, transcribed_text) マップ
     answer_map = {sid: (sname, text) for sid, sname, text in students_answers}
 
-    # 検証用データを構築
+    # 匿名化マッピングを構築（検証パスでもAPIに個人情報を送らない）
+    real_ids = list(scores_by_student.keys())
+    real_to_anon = {sid: f"S{i + 1:03d}" for i, sid in enumerate(real_ids)}
+    anon_to_real = {v: k for k, v in real_to_anon.items()}
+
+    # 検証用データを構築（匿名IDを使用）
     verify_entries: list[tuple[str, str, str, float, float, str]] = []
     for sid, q_scores in scores_by_student.items():
         if sid not in answer_map:
             continue
-        sname, text = answer_map[sid]
+        _, text = answer_map[sid]
         # descriptive は小問なしなので q_scores[0] を使う
         qs = q_scores[0]
-        verify_entries.append((sid, sname, text, qs.score, qs.max_points, qs.comment))
+        anon_id = real_to_anon[sid]
+        verify_entries.append((anon_id, "", text, qs.score, qs.max_points, qs.comment))
 
     if not verify_entries:
         return errors
@@ -1718,6 +1910,7 @@ def verify_question_scores(
                 rubric_title=rubric_title,
                 student_scores_with_answers=batch,
                 notes=notes,
+                is_typed=is_typed,
             )
             verified = parse_verification_result(
                 result, expected_ids, float(question.max_points),
@@ -1726,17 +1919,19 @@ def verify_question_scores(
             error_msg = f"問{question.id} 検証バッチ{batch_idx + 1}: {e}"
             errors.append(error_msg)
             # 検証エラー時は初回スコアを維持し、needs_review を付与
-            for sid in expected_ids:
-                if sid in scores_by_student:
-                    scores_by_student[sid][0].needs_review = True
-                    scores_by_student[sid][0].comment += "\n\n【検証結果】検証APIエラーのため未検証。"
+            for anon_id in expected_ids:
+                real_id = anon_to_real.get(anon_id, anon_id)
+                if real_id in scores_by_student:
+                    scores_by_student[real_id][0].needs_review = True
+                    scores_by_student[real_id][0].comment += "\n\n【検証結果】検証APIエラーのため未検証。"
             continue
 
-        # 検証結果をマージ
-        for sid, info in verified.items():
-            if sid not in scores_by_student:
+        # 検証結果をマージ（匿名ID → 実IDに変換）
+        for anon_id, info in verified.items():
+            real_id = anon_to_real.get(anon_id, anon_id)
+            if real_id not in scores_by_student:
                 continue
-            qs = scores_by_student[sid][0]
+            qs = scores_by_student[real_id][0]
             if info["score_changed"] and info["verified_score"] is not None:
                 qs.score = info["verified_score"]
                 qs.comment += f"\n\n【検証結果】得点変更: {info['verification_comment']}"
@@ -1750,8 +1945,43 @@ def verify_question_scores(
                     if info.get("review_reason"):
                         qs.review_reason = info["review_reason"]
             qs.confidence = info["confidence"]
+            # 得点変更時は検証feedbackで上書き（初回feedbackは変更前の得点に基づくため）
+            # 得点変更なしの場合は、初回feedbackが空のときのみ補填
+            if info["score_changed"] and info.get("feedback"):
+                qs.feedback = info["feedback"]
+            elif not qs.feedback and info.get("feedback"):
+                qs.feedback = info["feedback"]
 
     return errors
+
+
+def _anonymize_students(
+    students_answers: list[tuple[str, str, str]],
+) -> tuple[list[tuple[str, str, str]], dict[str, str]]:
+    """API送信前に生徒IDと氏名を仮番号に置換する。
+
+    Returns:
+        (匿名化済みリスト, 仮番号→元IDのマッピング)
+    """
+    anonymized = []
+    anon_to_real: dict[str, str] = {}
+    for i, (sid, sname, text) in enumerate(students_answers):
+        anon_id = f"S{i + 1:03d}"
+        anon_to_real[anon_id] = sid
+        anonymized.append((anon_id, "", text))  # 氏名は空文字
+    return anonymized, anon_to_real
+
+
+def _deanonymize_scores(
+    scores_by_anon: dict[str, list[QuestionScore]],
+    anon_to_real: dict[str, str],
+) -> dict[str, list[QuestionScore]]:
+    """API応答の仮番号を元のIDに復元する。"""
+    restored: dict[str, list[QuestionScore]] = {}
+    for anon_id, q_scores in scores_by_anon.items():
+        real_id = anon_to_real.get(anon_id, anon_id)
+        restored[real_id] = q_scores
+    return restored
 
 
 def run_horizontal_grading(
@@ -1763,8 +1993,16 @@ def run_horizontal_grading(
     on_question_progress: Callable[[int, int, Question, int, int], None] | None = None,
     student_ids_to_grade: list[str] | None = None,
     enable_verification: bool = False,
+    is_typed: bool = False,
+    teacher_scores: dict[str, dict[str, float | None]] | None = None,
 ) -> list[str]:
-    """Phase 2 全体: OCR結果を使って全問を横断採点する。"""
+    """Phase 2 全体: OCR結果を使って全問を横断採点する。
+
+    Args:
+        teacher_scores: 教員の事前採点 {student_id: {question_id: score or None}}。
+            指定時は一貫性チェックモードとして動作し、QuestionScore.teacher_score にセットする。
+    """
+    grading_options = getattr(rubric, 'grading_options', None)
     all_errors: list[str] = []
 
     target_ids = student_ids_to_grade
@@ -1809,28 +2047,37 @@ def run_horizontal_grading(
         if not students_answers:
             continue
 
+        # API送信前に匿名化（個人情報をGeminiに送らない）
+        anon_answers, anon_to_real = _anonymize_students(students_answers)
+
         ref_info = None
         if reference_students:
             ref_info = _build_reference_for_question(reference_students, question)
 
-        n_batches = (len(students_answers) + batch_size - 1) // batch_size
+        n_batches = (len(anon_answers) + batch_size - 1) // batch_size
 
         if on_question_progress:
             on_question_progress(q_idx, len(rubric.questions), question, 0, n_batches)
 
-        scores_by_student, errors = grade_question_horizontally(
+        scores_by_anon, errors = grade_question_horizontally(
             provider=provider,
             question=question,
             rubric_title=rubric.title,
-            all_students_answers=students_answers,
+            all_students_answers=anon_answers,
             reference_info=ref_info,
             notes=rubric.notes,
             batch_size=batch_size,
+            is_typed=is_typed,
+            grading_options=grading_options,
         )
+        # 匿名IDを元のIDに復元
+        scores_by_student = _deanonymize_scores(scores_by_anon, anon_to_real)
         all_errors.extend(errors)
 
         # 検証パス: 記述式かつ有効な場合
         if enable_verification and question.question_type == "descriptive" and not question.sub_questions:
+            if on_question_progress:
+                on_question_progress(q_idx, len(rubric.questions), question, n_batches + 1, n_batches)
             verify_errors = verify_question_scores(
                 provider=provider,
                 question=question,
@@ -1838,6 +2085,7 @@ def run_horizontal_grading(
                 scores_by_student=scores_by_student,
                 students_answers=students_answers,
                 notes=rubric.notes,
+                is_typed=is_typed,
             )
             all_errors.extend(verify_errors)
 
@@ -1845,11 +2093,6 @@ def run_horizontal_grading(
         if question.question_type == "descriptive" and not question.sub_questions:
             for sid, q_scores in scores_by_student.items():
                 for qs in q_scores:
-                    # 満点の記述式解答は教員確認を推奨
-                    if qs.score >= qs.max_points:
-                        qs.needs_review = True
-                        if not qs.review_reason:
-                            qs.review_reason = "記述式で満点を付与しました。模範解答と同等の内容か教員確認をお願いします。"
                     # 部分点なのに high は medium に補正
                     if qs.confidence == "high" and 0 < qs.score < qs.max_points:
                         qs.confidence = "medium"
@@ -1877,6 +2120,20 @@ def run_horizontal_grading(
             ]
             for qs in q_scores:
                 qs.ai_score = qs.score
+                # 一貫性チェック: 教員スコアをセット
+                if teacher_scores and sid in teacher_scores:
+                    ts = teacher_scores[sid].get(qs.question_id)
+                    qs.teacher_score = ts
+                    if ts is not None:
+                        # 教員スコアがある場合、表示上のスコアは教員のものを使う
+                        qs.score = ts
+                        diff = abs(ts - qs.ai_score)
+                        if diff >= 2:
+                            qs.needs_review = True
+                            qs.review_reason = (
+                                f"一貫性チェック: 教員{ts}点 vs AI{qs.ai_score}点（差{diff:+.1f}）。"
+                                f"AI根拠: {qs.comment}"
+                            )
             student.question_scores.extend(q_scores)
 
         if on_question_progress:
@@ -2062,8 +2319,15 @@ class ScoringProvider(ABC):
         students_answers: list[tuple[str, str, str]],
         reference_info: list[dict] | None = None,
         notes: str = "",
+        is_typed: bool = False,
+        grading_options=None,
     ) -> dict:
-        """1問を複数学生分まとめて横断採点する（Phase 2）。テキストのみ、画像不要。"""
+        """1問を複数学生分まとめて横断採点する（Phase 2）。テキストのみ、画像不要。
+
+        Args:
+            is_typed: Trueの場合、thinking_budgetを削減して高速処理する。
+            grading_options: GradingOptions（表記・文法の減点設定）
+        """
         raise NotImplementedError(
             f"{self.__class__.__name__} は横断採点に未対応です"
         )
@@ -2074,8 +2338,13 @@ class ScoringProvider(ABC):
         rubric_title: str,
         student_scores_with_answers: list[tuple[str, str, str, float, float, str]],
         notes: str = "",
+        is_typed: bool = False,
     ) -> dict:
-        """初回採点結果を検証する（ダブルチェック方式）。テキストのみ、画像不要。"""
+        """初回採点結果を検証する（ダブルチェック方式）。テキストのみ、画像不要。
+
+        Args:
+            is_typed: Trueの場合、thinking_budgetを削減して高速処理する。
+        """
         raise NotImplementedError(
             f"{self.__class__.__name__} は採点検証に未対応です"
         )
@@ -2100,9 +2369,9 @@ class GeminiProvider(ScoringProvider):
     """Google Gemini APIによる採点"""
 
     MODELS = {
-        "gemini-3.1-pro-preview": "Gemini 3.1 Pro Preview（最新・高精度）",
-        "gemini-2.5-pro": "Gemini 2.5 Pro（高精度）",
-        "gemini-2.5-flash": "Gemini 2.5 Flash（高速・低コスト）",
+        "gemini-3.1-pro-preview": "Gemini 3.1 Pro Preview（高精度）",
+        "gemini-3-flash-preview": "Gemini 3 Flash（高速・低コスト）",
+        "gemini-2.5-pro": "Gemini 2.5 Pro（旧世代・高精度）",
     }
 
     TIMEOUT = 180  # seconds
@@ -2339,10 +2608,10 @@ class GeminiProvider(ScoringProvider):
 
         contents.append(prompt)
 
-        # typed: thinking無効・トークン削減で高速化
+        # typed: トークン削減で高速化（thinking は最小限に抑える）
         if is_typed:
             output_tokens = 4096
-            thinking_budget = 0
+            thinking_budget = 1024
         else:
             output_tokens = 16384 if has_crops else 8192
             thinking_budget = 4096 if has_crops else 2048
@@ -2369,7 +2638,8 @@ class GeminiProvider(ScoringProvider):
         return _api_call_with_retry(_call)
 
     def grade_question_batch(self, question, rubric_title,
-                              students_answers, reference_info=None, notes=""):
+                              students_answers, reference_info=None, notes="",
+                              is_typed=False, grading_options=None):
         from google.genai import types
 
         prompt = (
@@ -2378,13 +2648,20 @@ class GeminiProvider(ScoringProvider):
                 question=question, rubric_title=rubric_title,
                 students_answers=students_answers,
                 reference_info=reference_info, notes=notes,
+                grading_options=grading_options,
             )
         )
 
         n = len(students_answers)
-        base = 8192 if question.question_type == "descriptive" else 4096
-        thinking_budget = min(base + n * 256, 16384)
-        response_budget = max(4096, n * 1024)
+        if is_typed:
+            # テキスト入力: thinking を抑えつつ採点に必要な最低限は確保
+            base = 4096 if question.question_type == "descriptive" else 2048
+            thinking_budget = min(base + n * 128, 8192)
+            response_budget = max(4096, n * 1024)
+        else:
+            base = 8192 if question.question_type == "descriptive" else 4096
+            thinking_budget = min(base + n * 256, 16384)
+            response_budget = max(4096, n * 1024)
         max_output = min(thinking_budget + response_budget, 65536)
 
         def _call():
@@ -2408,7 +2685,8 @@ class GeminiProvider(ScoringProvider):
         return _api_call_with_retry(_call)
 
     def verify_question_batch(self, question, rubric_title,
-                               student_scores_with_answers, notes=""):
+                               student_scores_with_answers, notes="",
+                               is_typed=False):
         from google.genai import types
 
         prompt = (
@@ -2421,8 +2699,12 @@ class GeminiProvider(ScoringProvider):
         )
 
         n = len(student_scores_with_answers)
-        thinking_budget = min(8192 + n * 256, 16384)
-        response_budget = max(4096, n * 512)
+        if is_typed:
+            thinking_budget = min(4096 + n * 128, 8192)
+            response_budget = max(4096, n * 512)
+        else:
+            thinking_budget = min(8192 + n * 256, 16384)
+            response_budget = max(4096, n * 512)
         max_output = min(thinking_budget + response_budget, 65536)
 
         def _call():
@@ -2738,11 +3020,13 @@ class AnthropicProvider(ScoringProvider):
         return _api_call_with_retry(_call)
 
     def grade_question_batch(self, question, rubric_title,
-                              students_answers, reference_info=None, notes=""):
+                              students_answers, reference_info=None, notes="",
+                              is_typed=False, grading_options=None):
         prompt = build_horizontal_grading_prompt(
             question=question, rubric_title=rubric_title,
             students_answers=students_answers,
             reference_info=reference_info, notes=notes,
+            grading_options=grading_options,
         )
 
         n = len(students_answers)
@@ -2762,7 +3046,8 @@ class AnthropicProvider(ScoringProvider):
         return _api_call_with_retry(_call)
 
     def verify_question_batch(self, question, rubric_title,
-                               student_scores_with_answers, notes=""):
+                               student_scores_with_answers, notes="",
+                               is_typed=False):
         prompt = build_verification_prompt(
             question=question, rubric_title=rubric_title,
             student_scores_with_answers=student_scores_with_answers,
@@ -2869,11 +3154,13 @@ class DemoProvider(ScoringProvider):
         return generate_demo_ocr(rubric)
 
     def grade_question_batch(self, question, rubric_title,
-                              students_answers, reference_info=None, notes=""):
+                              students_answers, reference_info=None, notes="",
+                              is_typed=False, grading_options=None):
         return generate_demo_horizontal_scores(question, students_answers)
 
     def verify_question_batch(self, question, rubric_title,
-                               student_scores_with_answers, notes=""):
+                               student_scores_with_answers, notes="",
+                               is_typed=False):
         return generate_demo_verification(student_scores_with_answers)
 
     def review_rubric(self, rubric: Rubric) -> dict:

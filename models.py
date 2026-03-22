@@ -67,6 +67,17 @@ class Question:
 
 
 @dataclass
+class GradingOptions:
+    """記述式採点の共通オプション"""
+    penalize_typos: bool = False  # 誤字・脱字を減点対象にする
+    penalize_grammar: bool = False  # 文法の誤りを減点対象にする
+    penalize_wrong_names: bool = False  # 人名・用語の間違いを減点対象にする
+    penalize_hiragana: bool = False  # 本文中で漢字の語をひらがなで書いている場合を減点対象にする
+    penalty_per_error: float = 1.0  # 1箇所あたりの減点幅
+    penalty_cap_ratio: float = 0.5  # 減点上限（各設問の配点に対する割合）
+
+
+@dataclass
 class Rubric:
     """採点基準（試験全体）"""
     title: str  # 試験名
@@ -74,6 +85,7 @@ class Rubric:
     pages_per_student: int  # 学生1人あたりのページ数
     questions: list[Question] = field(default_factory=list)
     notes: str = ""  # 採点上の注意事項
+    grading_options: GradingOptions = field(default_factory=GradingOptions)
 
 
 @dataclass
@@ -103,12 +115,14 @@ class QuestionScore:
     score: float  # 得点
     max_points: float  # 配点
     transcribed_text: str = ""  # AIが読み取ったテキスト
-    comment: str = ""  # 採点コメント
+    comment: str = ""  # 採点コメント（教員向け: 採点根拠）
+    feedback: str = ""  # 生徒向けフィードバック（改善アドバイス）
     confidence: str = "medium"  # "high", "medium", "low"
     needs_review: bool = False  # 要確認フラグ
     review_reason: str = ""  # 要確認の具体的理由（AIが判断に迷った内容）
     reviewed: bool = False  # 教員確認済みフラグ
     ai_score: float | None = None  # AI初期スコアのバックアップ（教員修正後に「戻す」用）
+    teacher_score: float | None = None  # 教員が事前に採点した点数（一貫性チェック用。Noneは未採点）
 
 
 @dataclass

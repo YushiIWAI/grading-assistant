@@ -44,30 +44,10 @@ class TestApi:
         assert body["summary"]["question_count"] == 2
 
     def test_render_rubric(self, client, sample_rubric):
+        from dataclasses import asdict
         response = client.post(
             "/api/v1/rubrics/render",
-            json={"rubric": sample_rubric.__dict__ | {
-                "questions": [
-                    {
-                        "id": q.id,
-                        "description": q.description,
-                        "type": q.question_type,
-                        "max_points": q.max_points,
-                        "scoring_criteria": q.scoring_criteria,
-                        "model_answer": q.model_answer,
-                        "sub_questions": [
-                            {
-                                "id": sq.id,
-                                "text": sq.text,
-                                "answer": sq.answer,
-                                "points": sq.points,
-                            }
-                            for sq in q.sub_questions
-                        ],
-                    }
-                    for q in sample_rubric.questions
-                ],
-            }},
+            json={"rubric": asdict(sample_rubric)},
         )
 
         assert response.status_code == 200
@@ -217,28 +197,32 @@ class TestApi:
 
 
 class TestUnauthenticatedAccess:
-    """未認証アクセスが401を返すことを検証するテスト"""
+    """未認証アクセスが401を返すことを検証するテスト。
 
-    def test_sessions_requires_auth(self, client):
+    ユーザーが登録済みの状態で、認証ヘッダーなしのアクセスが拒否されることを確認する。
+    （ユーザー未登録時はレガシーモードとして匿名アクセスが許可される）
+    """
+
+    def test_sessions_requires_auth(self, client, test_user):
         assert client.get("/api/v1/sessions").status_code == 401
 
-    def test_create_session_requires_auth(self, client):
+    def test_create_session_requires_auth(self, client, test_user):
         resp = client.post("/api/v1/sessions", json={"rubric_title": "x"})
         assert resp.status_code == 401
 
-    def test_audit_logs_requires_auth(self, client):
+    def test_audit_logs_requires_auth(self, client, test_user):
         assert client.get("/api/v1/audit-logs").status_code == 401
 
-    def test_admin_purge_requires_auth(self, client):
+    def test_admin_purge_requires_auth(self, client, test_user):
         assert client.post("/api/v1/admin/purge-expired").status_code == 401
 
-    def test_admin_delete_school_requires_auth(self, client):
+    def test_admin_delete_school_requires_auth(self, client, test_user):
         assert client.delete("/api/v1/admin/schools/xxx").status_code == 401
 
-    def test_admin_api_keys_requires_auth(self, client):
+    def test_admin_api_keys_requires_auth(self, client, test_user):
         assert client.get("/api/v1/admin/api-keys").status_code == 401
 
-    def test_run_ocr_requires_auth(self, client):
+    def test_run_ocr_requires_auth(self, client, test_user):
         resp = client.post("/api/v1/runs/ocr", json={"session_id": "x", "rubric": {}, "pdf_base64": "x", "provider": {"provider": "demo"}})
         assert resp.status_code == 401
 

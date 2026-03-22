@@ -144,7 +144,7 @@ class TestSetApiKeyEndpoint:
         }, headers=auth_headers)
         assert resp.status_code == 403
 
-    def test_requires_auth(self, test_db):
+    def test_requires_auth(self, test_db, test_user):
         resp = client.post("/api/v1/admin/api-keys", json={
             "provider": "gemini",
             "api_key": "key123",

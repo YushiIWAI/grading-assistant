@@ -963,6 +963,14 @@ def list_sessions(school_id: str | None = None) -> list[dict]:
     return sessions
 
 
+def _sanitize_csv_cell(value) -> str:
+    """Excelの数式インジェクションを防止する。"""
+    s = str(value) if value is not None else ""
+    if s and s[0] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + s
+    return s
+
+
 def export_csv(session: ScoringSession) -> str:
     """採点結果をCSV文字列にエクスポートする"""
     output = io.StringIO()
@@ -979,6 +987,7 @@ def export_csv(session: ScoringSession) -> str:
                 f"問{qs.question_id}_配点",
                 f"問{qs.question_id}_読取",
                 f"問{qs.question_id}_コメント",
+                f"問{qs.question_id}_フィードバック",
                 f"問{qs.question_id}_確信度",
                 f"問{qs.question_id}_要確認",
                 f"問{qs.question_id}_確認理由",
@@ -988,18 +997,21 @@ def export_csv(session: ScoringSession) -> str:
 
     # データ行
     for student in session.students:
-        row = [student.student_id, student.student_name, student.status]
+        row = [_sanitize_csv_cell(student.student_id),
+               _sanitize_csv_cell(student.student_name), student.status]
         for qs in student.question_scores:
             row.extend([
                 qs.score,
                 qs.max_points,
-                qs.transcribed_text,
-                qs.comment,
+                _sanitize_csv_cell(qs.transcribed_text),
+                _sanitize_csv_cell(qs.comment),
+                _sanitize_csv_cell(qs.feedback) if hasattr(qs, "feedback") else "",
                 qs.confidence,
                 "要確認" if qs.needs_review else "",
-                qs.review_reason if qs.needs_review else "",
+                _sanitize_csv_cell(qs.review_reason) if qs.needs_review else "",
             ])
-        row.extend([student.total_score, student.total_max_points, student.reviewer_notes])
+        row.extend([student.total_score, student.total_max_points,
+                     _sanitize_csv_cell(student.reviewer_notes)])
         writer.writerow(row)
 
     return output.getvalue()

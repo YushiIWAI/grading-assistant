@@ -5,7 +5,6 @@ from __future__ import annotations
 import csv
 import io
 import logging
-import re
 from dataclasses import dataclass, field
 
 from models import OcrAnswer, Rubric, StudentOcr
@@ -22,6 +21,10 @@ _IGNORE_EXACT = [
     "メールアドレス", "email",
 ]
 
+# 点数列の検出パターン（「問1（点数）」「問2（得点）」等）
+import re
+_SCORE_COL_PATTERN = re.compile(r"^問(\d+(?:-\d+)?)\s*[（(]\s*(?:点数|得点|score)\s*[）)]$", re.IGNORECASE)
+
 _CLASS_EXACT = ["組", "クラス", "学級"]
 
 _NUMBER_EXACT = ["番号", "出席番号"]
@@ -36,6 +39,7 @@ class ColumnMapping:
     number_col: int | None = None
     name_col: int | None = None
     question_cols: dict[str, int] = field(default_factory=dict)
+    score_cols: dict[str, int] = field(default_factory=dict)  # 教員採点済み点数列 {question_id: col_idx}
     ignore_cols: list[int] = field(default_factory=list)
 
 
@@ -45,6 +49,7 @@ class FormsCSVData:
     headers: list[str]
     rows: list[list[str]]
     auto_mapping: ColumnMapping
+    detected_score_cols: dict[str, int] = field(default_factory=dict)  # {question_id: col_idx}
 
 
 def _matches_exact(header: str, keywords: list[str]) -> bool:
@@ -83,6 +88,7 @@ def parse_forms_csv(csv_content: str) -> FormsCSVData:
 
     # 列の役割を自動推定
     mapping = ColumnMapping()
+    detected_score_cols: dict[str, int] = {}
 
     for i, header in enumerate(headers):
         h = header.strip()
@@ -96,12 +102,20 @@ def parse_forms_csv(csv_content: str) -> FormsCSVData:
             mapping.number_col = i
         elif _matches_exact(h, _NAME_EXACT):
             mapping.name_col = i
+        else:
+            # 点数列の自動検出（「問1（点数）」等）
+            score_match = _SCORE_COL_PATTERN.match(h)
+            if score_match:
+                qid = score_match.group(1)
+                detected_score_cols[qid] = i
+                mapping.ignore_cols.append(i)  # 設問候補からは除外
         # それ以外は設問候補（question_cols には入れない。UIでマッピングする）
 
     return FormsCSVData(
         headers=headers,
         rows=data_rows,
         auto_mapping=mapping,
+        detected_score_cols=detected_score_cols,
     )
 
 
@@ -122,7 +136,7 @@ def convert_to_ocr_results(
     data: FormsCSVData,
     mapping: ColumnMapping,
     rubric: Rubric,
-) -> tuple[list[StudentOcr], list[str]]:
+) -> tuple[list[StudentOcr], list[str], dict[str, dict[str, float | None]]]:
     """CSVデータをStudentOcrのリストに変換する。
 
     Args:
@@ -131,11 +145,13 @@ def convert_to_ocr_results(
         rubric: 採点基準（question_id の対応付けに使用）
 
     Returns:
-        (StudentOcrのリスト, エラーメッセージのリスト)
+        (StudentOcrのリスト, エラーメッセージのリスト,
+         教員スコア {student_id: {question_id: score or None}})
     """
     ocr_results: list[StudentOcr] = []
     errors: list[str] = []
     seen_ids: dict[str, int] = {}  # student_id → 出現回数（重複検出用）
+    teacher_scores: dict[str, dict[str, float | None]] = {}
 
     for row_idx, row in enumerate(data.rows):
         row_num = row_idx + 1
@@ -188,6 +204,25 @@ def convert_to_ocr_results(
                 manually_corrected=False,
             ))
 
+        # 教員スコアの抽出（score_cols がマッピングされている場合）
+        student_scores: dict[str, float | None] = {}
+        for question_id, col_idx in mapping.score_cols.items():
+            if col_idx < len(row):
+                raw = row[col_idx].strip()
+                if raw:
+                    try:
+                        student_scores[str(question_id)] = float(raw)
+                    except ValueError:
+                        errors.append(f"行{row_num}: 問{question_id} の点数 '{raw}' を数値に変換できません")
+                        student_scores[str(question_id)] = None
+                else:
+                    student_scores[str(question_id)] = None  # 空欄 = 未採点
+            else:
+                student_scores[str(question_id)] = None
+
+        if student_scores:
+            teacher_scores[student_id] = student_scores
+
         ocr_results.append(StudentOcr(
             student_id=student_id,
             student_name=student_name,
@@ -196,5 +231,6 @@ def convert_to_ocr_results(
             status="ocr_done",
         ))
 
-    logger.info("CSV取り込み完了: %d名分", len(ocr_results))
-    return ocr_results, errors
+    logger.info("CSV取り込み完了: %d名分（教員スコア: %d名分）",
+                len(ocr_results), len(teacher_scores))
+    return ocr_results, errors, teacher_scores
